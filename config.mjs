@@ -76,7 +76,7 @@ export async function installService(source, destination, stateDir, nodePath, { 
   if (process.env.CODEX_ROUTER_PYTHON) localEnv.CODEX_ROUTER_PYTHON = resolve(process.env.CODEX_ROUTER_PYTHON);
   const { cp } = await import('node:fs/promises');
   await mkdir(destination, { recursive: true, mode: 0o700 });
-  for (const name of ['cli.mjs', 'core.mjs', 'allocation.mjs', 'config.mjs', 'server.mjs', 'ui.mjs', 'quota.mjs', 'quota-native.mjs', 'platform.mjs', 'package.json', 'README.md']) await cp(join(source, name), join(destination, name));
+  for (const name of ['cli.mjs', 'core.mjs', 'allocation.mjs', 'config.mjs', 'server.mjs', 'ui.mjs', 'quota.mjs', 'quota-native.mjs', 'platform.mjs', 'i18n.mjs', 'package.json', 'README.md']) await cp(join(source, name), join(destination, name));
   const launcher = `#!/bin/zsh\nexec '${nodePath.replaceAll("'", "'\\''")}' '${join(destination, 'cli.mjs').replaceAll("'", "'\\''")}' dashboard\n`;
   await writeFile(join(destination, '打开设置.command'), launcher, { mode: 0o700 });
   await mkdir(stateDir, { recursive: true, mode: 0o700 });

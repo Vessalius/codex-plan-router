@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir, chmod, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { bilingual, cliLanguage, localizeMessage } from './i18n.mjs';
 import { isAccountSlot } from './core.mjs';
 
 import { codexExecutable, openBrowser as openURL, stateDirectory as defaultStateDirectory } from './platform.mjs';
@@ -130,7 +131,7 @@ export async function withAccount(slot, { directory = stateDirectory, login = fa
       if (url.protocol !== 'https:' || !['auth.openai.com', 'chatgpt.com'].includes(url.hostname)) throw new Error('官方登录地址验证失败');
       // 链接不写入日志；账号选择和同意步骤由用户在官方浏览器页面完成。
       await openBrowser(url.toString());
-      console.log(`已打开账号 ${slot.toUpperCase()} 的官方登录页，请选择代理设置中的账号 ${slot.toUpperCase()}。桌面主号不会退出。`);
+      console.log(bilingual(cliLanguage(), `已打开官方登录页。请选择账号 ${slot.toUpperCase()}。`, `The sign-in page is open. Select account ${slot.toUpperCase()}.`));
       await client.completed(result.loginId);
     }
     let account = await client.request('account/read', { refreshToken: false });
@@ -153,6 +154,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (process.argv[2] !== 'login' || !isAccountSlot(process.argv[3])) throw new Error('用法：node quota-native.mjs login <账号编号>');
     const slot = process.argv[3];
     await withAccount(slot, { login: true });
-    console.log(`账号 ${slot.toUpperCase()} 独立授权与官方额度查询成功，菜单栏将在下一次刷新时更新。`);
-  } catch (error) { console.error(error.message); process.exitCode = 1; }
+    console.log(bilingual(cliLanguage(), `账号 ${slot.toUpperCase()} 的额度授权已完成。`, `Quota authorization completed for account ${slot.toUpperCase()}.`));
+  } catch (error) { console.error(localizeMessage(error.message, cliLanguage())); process.exitCode = 1; }
 }

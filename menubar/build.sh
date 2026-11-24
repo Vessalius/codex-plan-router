@@ -14,16 +14,16 @@ cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>com.sun.codex-plan-router.menubar</string>
 <key>CFBundleName</key><string>Codex Plan Router</string>
-<key>CFBundleDisplayName</key><string>Codex 多账号代理</string>
+<key>CFBundleDisplayName</key><string>Codex Plan Router</string>
 <key>CFBundleExecutable</key><string>RouterMenu</string>
 <key>CFBundleIconFile</key><string>Router.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.7.4</string>
-<key>CFBundleVersion</key><string>14</string>
+<key>CFBundleShortVersionString</key><string>0.7.5</string>
+<key>CFBundleVersion</key><string>15</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSHumanReadableCopyright</key><string>本机 Codex 多账号代理菜单栏工具</string>
+<key>NSHumanReadableCopyright</key><string>本机 Codex Plan Router菜单栏工具</string>
 </dict></plist>
 PLIST
 /usr/bin/plutil -lint "$task_app_path/Contents/Info.plist"

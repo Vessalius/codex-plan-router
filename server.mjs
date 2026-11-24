@@ -4,6 +4,7 @@ import { gunzipSync, inflateSync, brotliDecompressSync, zstdDecompressSync } fro
 import { Auth, Scheduler, SSEObserver, RouterError, API, APP, compatible, equal, isAccountSlot, officialFetch } from './core.mjs';
 import { DesktopConfig } from './config.mjs';
 import { HTML } from './ui.mjs';
+import { bilingual, languageFrom, localizeMessage } from './i18n.mjs';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { QUOTA_QUERY_CONCURRENCY } from './quota.mjs';
@@ -13,6 +14,13 @@ const PRIMARY = 'https://chatgpt.com';
 function reply(res, status, value, type = 'application/json; charset=utf-8') {
   res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" });
   res.end(typeof value === 'string' ? value : JSON.stringify(value));
+}
+function requestLanguage(req) {
+  return languageFrom(req.headers['accept-language']);
+}
+function authPage(language, title, message) {
+  const escape = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return `<!doctype html><html lang="${language === 'zh' ? 'zh-CN' : 'en'}"><meta charset="utf-8"><title>${escape(title)}</title><p>${escape(message)}</p></html>`;
 }
 async function readBody(req) {
   const chunks = []; let size = 0;
@@ -46,8 +54,8 @@ export class RouterServer {
       const finished = () => { if (counted) { counted = false; this.activeRequests--; } };
       res.once('finish', finished); res.once('close', finished);
       this.handle(req, res).catch(e => {
-        if (!res.headersSent) reply(res, e.status || 502, { error: { code: e.code || 'router_failure', message: e instanceof RouterError ? e.message : '本地代理请求失败；未重放已经开始的请求' } });
-        else if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { code: 'router_stream_interrupted', message: '代理流中断，请检查连接；没有自动重放请求' } })}\n\n`); res.end(); }
+        if (!res.headersSent) reply(res, e.status || 502, { error: { code: e.code || 'router_failure', message: localizeMessage(e instanceof RouterError ? e.message : '本地代理请求失败；未重放已经开始的请求', requestLanguage(req)) } });
+        else if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { code: 'router_stream_interrupted', message: localizeMessage('代理流中断，请检查连接；没有自动重放请求', requestLanguage(req)) } })}\n\n`); res.end(); }
       });
     });
     this.server.on('upgrade', (_req, socket) => socket.end('HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
@@ -61,8 +69,17 @@ export class RouterServer {
     if (req.headers.host !== allowedHost) throw new RouterError('拒绝不匹配的本地地址', 403);
     const url = new URL(req.url, `http://${allowedHost}`);
     if (url.pathname === '/auth/callback' && req.method === 'GET') {
-      try { await this.auth.callback(url.searchParams); reply(res, 200, '<!doctype html><meta charset="utf-8"><title>授权完成</title><p>账号授权已保存。请关闭此页，返回本地代理设置页验证账号。</p>', 'text/html; charset=utf-8'); }
-      catch (e) { reply(res, 400, `<!doctype html><meta charset="utf-8"><title>授权未完成</title><p>${e instanceof RouterError ? e.message.replaceAll('<', '&lt;') : '授权服务暂不可用，请返回设置页重试'}</p>`, 'text/html; charset=utf-8'); }
+      const language = requestLanguage(req);
+      try {
+        await this.auth.callback(url.searchParams);
+        const title = bilingual(language, '授权完成', 'Authorization complete');
+        const message = bilingual(language, '账号授权已保存。请关闭此页，返回本地设置。', 'Account authorization saved. Close this tab and return to Settings.');
+        reply(res, 200, authPage(language, title, message), 'text/html; charset=utf-8');
+      } catch (e) {
+        const title = bilingual(language, '授权未完成', 'Authorization incomplete');
+        const message = localizeMessage(e instanceof RouterError ? e.message : '授权服务暂不可用，请返回设置页重试', language);
+        reply(res, 400, authPage(language, title, message), 'text/html; charset=utf-8');
+      }
       return;
     }
     if (req.headers.origin && req.headers.origin !== `http://${allowedHost}`) throw new RouterError('拒绝跨站请求', 403);
@@ -97,8 +114,8 @@ export class RouterServer {
         if (this.scheduler.inFlight[body.slot] || this.verifying.has(body.slot)) throw new RouterError('此账号仍有请求运行，请完成后再断开', 409);
         await this.auth.disconnect(body.slot); return reply(res, 200, { ok: true });
       }
-      if (url.pathname === '/admin/enable') { await this.config.enable(); return reply(res, 200, { ok: true, message: '配置已启用。请等所有任务结束后手动退出并重新打开客户端；工具不会主动重启客户端。' }); }
-      if (url.pathname === '/admin/disable') { await this.config.disable(); return reply(res, 200, { ok: true, message: '已移除代理配置。请等任务结束后重新打开客户端生效。后台服务仍在运行，供当前连接收尾。' }); }
+      if (url.pathname === '/admin/enable') { await this.config.enable(); return reply(res, 200, { ok: true, message: localizeMessage('配置已启用。请等所有任务结束后手动退出并重新打开客户端；工具不会主动重启客户端。', requestLanguage(req)) }); }
+      if (url.pathname === '/admin/disable') { await this.config.disable(); return reply(res, 200, { ok: true, message: localizeMessage('已移除代理配置。请等任务结束后重新打开客户端生效。后台服务仍在运行，供当前连接收尾。', requestLanguage(req)) }); }
       throw new RouterError('管理接口不存在', 404);
     }
     const prefix = `/bridge/${this.store.data.bridgeKey}`;
@@ -200,7 +217,10 @@ export class RouterServer {
         if (observer) await observer.push(value);
         if (!res.write(value)) await once(res, 'drain', { signal: AbortSignal.timeout(300_000) });
       }
-      if (observer && !observer.completed && !observer.failed && !res.destroyed) res.write('event: error\ndata: {"type":"error","error":{"code":"router_incomplete_stream","message":"上游流未正常完成；没有自动重放请求"}}\n\n');
+      if (observer && !observer.completed && !observer.failed && !res.destroyed) {
+        const message = localizeMessage('上游流未正常完成；没有自动重放请求', requestLanguage(res.req));
+        res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { code: 'router_incomplete_stream', message } })}\n\n`);
+      }
       res.end();
     } finally { await reader.cancel().catch(() => {}); }
   }

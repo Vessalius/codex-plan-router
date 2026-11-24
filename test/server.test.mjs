@@ -75,6 +75,13 @@ test('代理生成的加密内容后续仍发原账号，停用原账号时不�
 test('管理和代理接口拒绝缺少密钥、跨站和 DNS 重绑定请求', async t => {
   let calls = 0; const f = await fixture(t, async () => { calls++; return Response.json({}); });
   assert.equal((await fetch(`${f.base}/admin/status`)).status, 401);
+  const english = await fetch(`${f.base}/admin/status`, { headers: { 'Accept-Language': 'en' } });
+  assert.equal(english.status, 401);
+  assert.match((await english.json()).error.message, /Open Settings/);
+  const callback = await fetch(`${f.base}/auth/callback?error=access_denied`, { headers: { 'Accept-Language': 'en' } });
+  assert.equal(callback.status, 400);
+  assert.match(await callback.text(), /Authorization incomplete/);
+
   const rebound = await new Promise((resolve, reject) => { const req = http.get(`${f.base}/health`, { headers: { host: 'evil.example' } }, res => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); });
   assert.equal(rebound, 403);
   assert.equal((await f.send(body, { origin: 'https://evil.example' })).status, 403);

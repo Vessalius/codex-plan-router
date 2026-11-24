@@ -1,7 +1,11 @@
-## 安装文件
+## 中文
 
-- **macOS**：Apple Silicon 和 Intel 的 DMG。拖拽安装，包含原生菜单栏、自带后台、新图标和可选的「登录时启动」。
-- **Windows**：x64 和 ARM64 的安装 EXE，含开始菜单快捷方式和卸载入口。
-- **Linux**：适用于 Debian / Ubuntu 的 amd64 和 ARM64 DEB，含应用菜单入口。
+- 软件现支持简体中文和英文。macOS 菜单栏与原生设置、Windows 和 Linux 的本机设置页均可切换语言。
+- 默认跟随系统或浏览器语言，选择会保存在本机。
+- GitHub README 新增完整英文版。
 
-每个平台的安装文件均由 GitHub Actions 构建和检查。验证使用空账号目录和离线后台，不登录或请求 OpenAI。可通过 `SHA256SUMS.txt` 校验下载。macOS 包未公证，Windows 包未做发行者签名。
+## English
+
+- English and Simplified Chinese are available in the macOS menu bar and native Settings, and in the Windows and Linux dashboard.
+- The UI follows the system or browser language by default. Your selection is saved locally.
+- The GitHub README has a complete English edition.

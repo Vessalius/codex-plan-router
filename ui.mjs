@@ -1,30 +1,219 @@
+const text = {
+  title: ['Codex 多账号代理', 'Codex Plan Router'],
+  intro: ['按额度给已授权的 ChatGPT 账号分配兼容的 Codex 请求。', 'Route compatible Codex requests across authorized ChatGPT accounts based on their quota.'],
+  language: ['界面语言', 'Language'],
+  system: ['跟随浏览器', 'Browser default'],
+  accounts: ['账号管理', 'Accounts'],
+  account: ['账号 {slot}', 'Account {slot}'],
+  signInIntro: ['在 OpenAI 页面选择账号，授权此工具使用订阅。', 'Choose an account on the OpenAI sign-in page and grant subscription access.'],
+  add: ['添加账号', 'Add account'],
+  loading: ['正在读取状态…', 'Loading status…'],
+  connection: ['桌面连接', 'Desktop connection'],
+  verifyIntro: ['启用代理前，至少验证两个账号。每次验证会消耗少量订阅额度。', 'Verify at least two accounts before enabling the proxy. Each check uses a small amount of subscription quota.'],
+  primary: ['Codex 当前登录账号', 'Current Codex account'],
+  none: ['尚未指定', 'Not set'],
+  primaryHelp: ['此选项用于统计直连的用量，请在 Codex 账号菜单切换实际登录。', 'This setting assigns direct usage to an account for statistics. Use the Codex account menu to change the actual login.'],
+  enable: ['启用桌面代理', 'Enable desktop proxy'],
+  disable: ['恢复官方直连', 'Restore direct connection'],
+  restart: ['更改连接后，等任务完成再重新打开 Codex。', 'After changing the connection, finish your tasks and reopen Codex.'],
+  routing: ['请求分配', 'Request routing'],
+  policy: ['新请求优先按五小时、每周剩余额度和重置时间分配。额度数据不完整时，参考近期观察用量。', 'New requests are routed using 5-hour and weekly quota and reset times. If quota data is incomplete, routing uses recent observed usage.'],
+  context: ['已有上下文通常沿用原账号。响应开始后，代理不会换账号重发。', 'Existing context normally stays with its original account. The proxy never retries a response with another account once streaming begins.'],
+  manageUsage: ['查看官方用量与授权', 'View official usage and permissions'],
+  initial: ['在本机连接需要使用的账号。', 'Connect the accounts you want to use on this device.'],
+  failed: ['请求失败，请检查后台服务。', 'Request failed. Check the local backend.'],
+  popup: ['请允许此页面打开登录窗口。', 'Allow pop-ups for this page to open the sign-in window.'],
+  authorize: ['请在 OpenAI 页面完成授权，然后返回此页。', 'Complete authorization on the OpenAI page, then return here.'],
+  notConnected: ['尚未连接', 'Not connected'],
+  needsLogin: ['需要重新登录', 'Sign in again'],
+  verified: ['已验证', 'Verified'],
+  awaiting: ['已授权，待验证', 'Authorized, awaiting verification'],
+  notAuthorized: ['未授权订阅', 'Subscription access not granted'],
+  remaining: ['官方剩余 · 五小时 {five} · 每周 {week}', 'Official remaining · 5-hour {five} · Weekly {week}'],
+  reauthorize: ['重新授权', 'Reauthorize'],
+  verify: ['验证账号（少量真实用量）', 'Verify account (uses quota)'],
+  verifiedResult: ['账号 {slot} 已验证，模型 {model}。', 'Account {slot} verified with model {model}.'],
+  revoke: ['撤销此工具授权', 'Revoke app access'],
+  revokePrompt: ['撤销此工具的订阅授权？桌面客户端仍保持登录。', 'Revoke this app’s subscription access? The desktop client stays signed in.'],
+  revoked: ['已撤销账号授权。', 'Account authorization revoked.'],
+  paused: ['暂缓调度至 {time}（非官方重置时间）', 'Routing paused until {time} (local estimate)'],
+  enabledConfigured: ['已配置桌面代理，重新打开 Codex 后生效。', 'Desktop proxy configured. Reopen Codex to apply.'],
+  modified: ['代理配置已被改动，请检查配置文件。', 'The proxy configuration was edited. Check the configuration file.'],
+  direct: ['桌面客户端使用官方直连。', 'The desktop client uses a direct connection.'],
+  next: ['下一条可自由分配的请求 · {account} · {basis}', 'Next unbound request · {account} · {basis}'],
+  noAccount: ['暂无可用账号', 'No accounts available'],
+  official: ['官方额度', 'Official quota'],
+  observed: ['本地观察用量', 'Observed usage'],
+  usage: ['代理完成 {routed} 次 · 原生通道请求 {direct} 次', 'Proxied: {routed} · Direct: {direct}'],
+  primarySaved: ['已更新统计主号。', 'Primary account for statistics updated.'],
+  enablePrompt: ['启用会更新 Codex 请求配置。等任务结束后，需手动重新打开客户端。是否继续？', 'Enabling the proxy updates the Codex connection. Finish your tasks, then reopen Codex to apply it. Continue?'],
+  missingKey: ['设置链接缺少访问凭证。请从系统应用菜单或 dashboard 命令重新打开。', 'The settings link is missing its local credentials. Reopen it from the application menu or with the dashboard command.'],
+};
+
 export const HTML = `<!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codex 多账号代理</title>
-<style>body{font:16px/1.65 system-ui,sans-serif;background:#f5f5f2;color:#222;max-width:850px;margin:40px auto;padding:0 20px}h1{font-size:29px}h2{font-size:20px}section{background:white;padding:24px;border-radius:14px;margin:18px 0;border:1px solid #ddd}button{padding:10px 17px;border:1px solid #aaa;border-radius:7px;background:white;cursor:pointer;margin:5px 8px 5px 0;font-size:14px}button.primary{background:#202d2a;color:white}button:disabled{opacity:.5;cursor:wait}.muted{color:#666;font-size:14px}.badge{font-weight:600}#message{white-space:pre-wrap}a{color:#176445}code{overflow-wrap:anywhere}.error{color:#a12828}</style>
-<h1>Codex 多账号代理</h1><p>桌面客户端保持主号登录，模型请求按代理观察到的用量分配给已授权账号。</p>
-<section><h2>1. 连接个人账号</h2><p class="muted">在浏览器选择要连接的账号，并允许此工具使用 ChatGPT 订阅。无需提供密码、API Key，也不会读取桌面客户端的登录文件。</p><button id="add-account">添加账号</button><div id="accounts">正在读取状态…</div></section>
-<section><h2>2. 验证后启用</h2><p>每个账号的验证会发送一条很短的真实模型请求，消耗少量订阅额度。至少两个账号验证成功后，才允许启用桌面代理。</p><p><label>桌面客户端当前登录的主号对应：<select id="primary-slot"><option value="">尚未指定</option></select></label></p><p class="muted">指定主号后，代理观察到的原生主号请求用量也会计入对应账号，帮助调度。不会更改桌面登录。</p><button id="enable" class="primary">启用桌面代理</button><button id="disable">恢复官方直连</button><p id="desktop" class="muted"></p><p class="muted">首次启用或恢复直连后，需要你在所有任务完成时手动退出并重新打开客户端。工具不会主动重启客户端。</p></section>
-<section><h2>运行状态与边界</h2><p id="usage"></p><p id="allocation"></p><p>优先依据各账号的官方五小时、每周剩余额度及重置时间分配新请求，兼顾并发。任何窗口已耗尽的账号不接新请求。官方数据超过三分钟或不完整时，退回代理观察用量均衡；不会猜测重置后的额度。</p><p>已有加密上下文固定使用原账号。无法兼容的工具请求保留主号处理；绑定代理账号的上下文不强制切回主号。响应开始后不会换号重放。</p><p>本工具在使用你的 ChatGPT 订阅。<a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">管理订阅额度与工具授权</a></p></section>
-<section id="message" role="status">请完成账号连接。授权信息只保存在本机受保护的目录。</section>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex Plan Router</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f5f5f2;color:#222;max-width:850px;margin:40px auto;padding:0 20px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:29px;margin:0}h2{font-size:20px;margin-top:0}
+section{background:white;padding:24px;border-radius:14px;margin:18px 0;border:1px solid #ddd}
+button,select{font:inherit;font-size:14px;padding:7px 11px;border:1px solid #aaa;border-radius:7px;background:white}
+button{cursor:pointer;margin:4px 8px 4px 0}button.primary{background:#202d2a;color:white}button:disabled{opacity:.5;cursor:default}
+.muted{color:#666;font-size:14px}#message{white-space:pre-wrap}a{color:#176445}.error{color:#a12828}
+.account + .account{border-top:1px solid #eee;margin-top:14px}
+</style>
+<header>
+  <h1 data-msg="title"></h1>
+  <label><span data-msg="language"></span> <select id="language">
+    <option value="system" data-msg="system"></option><option value="zh">简体中文</option><option value="en">English</option>
+  </select></label>
+</header>
+<p data-msg="intro"></p>
+<section>
+  <h2 data-msg="accounts"></h2><p class="muted" data-msg="signInIntro"></p>
+  <button id="add-account" data-msg="add" disabled></button><div id="accounts" data-msg="loading"></div>
+</section>
+<section>
+  <h2 data-msg="connection"></h2><p data-msg="verifyIntro"></p>
+  <p><label><span data-msg="primary"></span> <select id="primary-slot" disabled></select></label></p>
+  <p class="muted" data-msg="primaryHelp"></p>
+  <button id="enable" class="primary" data-msg="enable" disabled></button><button id="disable" data-msg="disable" disabled></button>
+  <p id="desktop" class="muted"></p><p class="muted" data-msg="restart"></p>
+</section>
+<section>
+  <h2 data-msg="routing"></h2><p id="allocation"></p><p id="usage"></p><p data-msg="policy"></p><p data-msg="context"></p>
+  <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer" data-msg="manageUsage"></a>
+</section>
+<section id="message" role="status"></section>
 <script>
-let key=location.hash.slice(1);history.replaceState(null,'','/');
-const $=id=>document.getElementById(id);let busy=false;
-async function api(path,body){const r=await fetch('/admin/'+path,{method:body?'POST':'GET',headers:{'x-router-key':key,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error?.message||'请求失败');return d}
-function show(text,error=false){$('message').textContent=text;$('message').className=error?'error':''}
-async function act(fn){if(busy)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);try{await fn()}catch(e){show(e.message,true)}finally{busy=false;await refresh()}}
-function connectAccount(slot){
-  const popup=window.open('about:blank','_blank');
-  act(async()=>{
-    try{
-      if(!popup)throw Error('请允许此设置页打开登录窗口后重试');
-      const result=await api('login',{slot});
-      popup.location=result.url;
-      show('请在新窗口完成登录授权，然后返回此页。');
-    }catch(error){popup?.close();throw error}
+const messages = ${JSON.stringify(text).replaceAll('<', '\\u003c')};
+const $ = id => document.getElementById(id);
+const key = location.hash.slice(1);
+history.replaceState(null, '', '/');
+let preference = 'system', language = 'en', busy = false, snapshot;
+try {
+  const stored = localStorage.getItem('routerLanguage');
+  if (['system', 'zh', 'en'].includes(stored)) preference = stored;
+} catch {}
+function t(id, fields = {}) {
+  return messages[id][language === 'zh' ? 0 : 1].replace(/{(\\w+)}/g, (token, name) => fields[name] ?? token);
+}
+function applyLanguage() {
+  language = preference === 'system' ? (navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en') : preference;
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  document.title = t('title');
+  document.querySelectorAll('[data-msg]').forEach(node => { node.textContent = t(node.dataset.msg); });
+  $('language').value = preference;
+  if (snapshot) render(snapshot);
+  show(t(key ? 'initial' : 'missingKey'), !key);
+}
+async function api(path, body) {
+  const headers = { 'x-router-key': key, 'Accept-Language': language };
+  if (body) headers['Content-Type'] = 'application/json';
+  const response = await fetch('/admin/' + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+  const result = await response.json();
+  if (!response.ok) throw Error(result.error?.message || t('failed'));
+  return result;
+}
+function show(value, error = false) {
+  $('message').textContent = value;
+  $('message').className = error ? 'error' : '';
+}
+async function act(action) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll('button,#language,#primary-slot').forEach(node => { node.disabled = true; });
+  try { await action(); } catch (error) { show(error.message, true); }
+  finally { busy = false; $('language').disabled = false; await refresh(); }
+}
+function connectAccount(slot) {
+  if (busy) return;
+  const popup = window.open('about:blank', '_blank');
+  act(async () => {
+    try {
+      if (!popup) throw Error(t('popup'));
+      const result = await api('login', { slot });
+      popup.location = result.url;
+      show(t('authorize'));
+    } catch (error) { popup?.close(); throw error; }
   });
 }
-async function refresh(){try{const s=await api('status');$('primary-slot').replaceChildren(new Option('尚未指定',''),...s.accounts.filter(a=>a.registered).map(a=>new Option('账号 '+a.slot.toUpperCase(),a.slot)));$('primary-slot').value=s.primarySlot;$('add-account').disabled=busy;$('accounts').replaceChildren();for(const a of s.accounts){const div=document.createElement('div');const p=document.createElement('p');p.textContent='账号 '+a.slot.toUpperCase()+' · '+(a.email||'尚未连接')+' · '+(a.needsLogin?'需要重新登录':a.verified?'已验证':a.enabled?'已授权，待验证':a.registered?'未授权订阅':'未登录');div.append(p);if(a.registered){const q=a.allocationQuota;const line=document.createElement('p');const pct=window=>window?Math.floor(window.remainingPercent)+'%':'—';line.className='muted';line.textContent='官方剩余 · 五小时 '+pct(q?.fiveHour)+' · 每周 '+pct(q?.weekly);div.append(line)}const make=(text,fn)=>{const b=document.createElement('button');b.textContent=text;b.disabled=busy;b.onclick=fn;div.append(b)};make(a.registered?'重新授权':'Continue with ChatGPT',()=>connectAccount(a.slot));if(a.enabled&&!a.needsLogin)make('验证账号（少量真实用量）',()=>act(async()=>{const d=await api('verify',{slot:a.slot});show('账号 '+a.slot.toUpperCase()+' 已完成真实推理验证，模型：'+d.model)}));if(a.enabled)make('撤销此工具授权',()=>{if(confirm('撤销此工具在该账号的授权？不会退出桌面客户端。'))act(async()=>{await api('disconnect',{slot:a.slot});show('已撤销该账号对此工具的授权。')})});if(a.cooldownUntil>Date.now()){const p=document.createElement('p');p.className='muted';p.textContent='暂缓调度至 '+new Date(a.cooldownUntil).toLocaleString()+'。这不是官方额度重置时间。';div.append(p)}$('accounts').append(div)}$('enable').disabled=busy||s.desktop.enabled||s.accounts.filter(a=>a.verified&&a.enabled&&!a.needsLogin).length<2;$('disable').disabled=busy||!s.desktop.enabled;$('desktop').textContent=s.desktop.enabled?'桌面代理配置已启用；运行中的客户端是否已加载配置，需要重新打开后验证。':s.desktop.modified?'代理配置被手动改动，请检查配置文件。':'桌面客户端仍使用官方直连，当前会话未改动。';$('allocation').textContent=s.allocation?'当前策略：官方额度与重置时间优先。下一条可自由分配请求：'+(s.allocation.nextUnboundAccount?s.allocation.nextUnboundAccount.toUpperCase():'暂无可用账号')+'；依据：'+(s.allocation.nextBasis==='official_quota'?'官方额度':'本地观察用量后备'):'正在等待后台策略更新';$('usage').textContent='代理完成 '+s.routed+' 次请求；主号处理 '+s.fallbacks+' 次请求。最近五小时观察值：'+s.accounts.map(a=>a.slot.toUpperCase()+' '+Math.round(a.observedScore)).join(' / ')}catch(e){show(e.message,true)}}
-$('add-account').onclick=()=>connectAccount('');
-$('primary-slot').onchange=()=>act(async()=>{await api('primary',{slot:$('primary-slot').value});show('已更新主号对应关系，只影响后续观察用量的归属。')});
-$('enable').onclick=()=>{if(confirm('启用将备份并修改 Codex 模型请求配置；请在任务结束后手动重新打开客户端。继续？'))act(async()=>show((await api('enable',{})).message))};$('disable').onclick=()=>act(async()=>show((await api('disable',{})).message));if(!key)show('设置链接缺少访问凭证，请运行本地工具的 dashboard 命令重新打开。',true);else{refresh();setInterval(()=>{if(!busy)refresh()},5000)}
+function render(s) {
+  const accountName = slot => t('account', { slot: slot.toUpperCase() });
+  const options = s.accounts.filter(account => account.registered).map(account => new Option(accountName(account.slot), account.slot));
+  $('primary-slot').replaceChildren(new Option(t('none'), ''), ...options);
+  $('primary-slot').value = s.primarySlot;
+  $('primary-slot').disabled = busy;
+  $('add-account').disabled = busy;
+  $('accounts').removeAttribute('data-msg');
+  $('accounts').replaceChildren();
+  for (const account of s.accounts) {
+    const card = document.createElement('div');
+    const slot = account.slot.toUpperCase();
+    card.className = 'account';
+    const paragraph = (value, muted = false) => {
+      const node = document.createElement('p');
+      node.textContent = value;
+      if (muted) node.className = 'muted';
+      card.append(node);
+    };
+    const button = (id, action) => {
+      const node = document.createElement('button');
+      node.textContent = t(id);
+      node.disabled = busy;
+      node.onclick = action;
+      card.append(node);
+    };
+    const state = account.needsLogin ? 'needsLogin' : account.verified ? 'verified' : account.enabled ? 'awaiting' : 'notAuthorized';
+    paragraph([accountName(account.slot), account.email || t('notConnected'), account.registered ? t(state) : null].filter(Boolean).join(' · '));
+    if (account.registered) {
+      const q = account.allocationQuota;
+      const percent = value => value ? Math.floor(value.remainingPercent) + '%' : '—';
+      paragraph(t('remaining', { five: percent(q?.fiveHour), week: percent(q?.weekly) }), true);
+    }
+    button(account.registered ? 'reauthorize' : 'add', () => connectAccount(account.slot));
+    if (account.enabled && !account.needsLogin) button('verify', () => act(async () => {
+      const { model } = await api('verify', { slot: account.slot });
+      show(t('verifiedResult', { slot, model }));
+    }));
+    if (account.enabled) button('revoke', () => {
+      if (confirm(t('revokePrompt'))) act(async () => { await api('disconnect', { slot: account.slot }); show(t('revoked')); });
+    });
+    if (account.cooldownUntil > Date.now()) paragraph(t('paused', { time: new Date(account.cooldownUntil).toLocaleString(document.documentElement.lang) }), true);
+    $('accounts').append(card);
+  }
+  $('enable').disabled = busy || s.desktop.enabled || s.desktop.modified ||
+    s.accounts.filter(a => a.verified && a.enabled && !a.needsLogin).length < 2;
+  $('disable').disabled = busy || !s.desktop.enabled;
+  $('desktop').textContent = t(s.desktop.modified ? 'modified' : s.desktop.enabled ? 'enabledConfigured' : 'direct');
+  if (s.allocation) {
+    const slot = s.allocation.nextUnboundAccount;
+    $('allocation').textContent = t('next', {
+      account: slot ? accountName(slot) : t('noAccount'),
+      basis: t(s.allocation.nextBasis === 'official_quota' ? 'official' : 'observed')
+    });
+  }
+  $('usage').textContent = t('usage', { routed: s.routed, direct: s.fallbacks });
+}
+async function refresh() {
+  try { snapshot = await api('status'); render(snapshot); }
+  catch (error) { show(error.message, true); }
+}
+$('language').onchange = event => {
+  preference = event.target.value;
+  try { localStorage.setItem('routerLanguage', preference); } catch {}
+  applyLanguage();
+};
+$('add-account').onclick = () => connectAccount('');
+$('primary-slot').onchange = event => {
+  const slot = event.target.value;
+  act(async () => { await api('primary', { slot }); show(t('primarySaved')); });
+};
+$('enable').onclick = () => {
+  if (confirm(t('enablePrompt'))) act(async () => show((await api('enable', {})).message));
+};
+$('disable').onclick = () => act(async () => show((await api('disable', {})).message));
+applyLanguage();
+if (key) { refresh(); setInterval(() => { if (!busy) refresh(); }, 5000); }
 </script></html>`;

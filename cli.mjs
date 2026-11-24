@@ -6,15 +6,17 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
 import { openBrowser, stateDirectory } from './platform.mjs';
+import { bilingual, cliLanguage, localizeMessage } from './i18n.mjs';
 import { Store, APP, RouterError } from './core.mjs';
 import { RouterServer } from './server.mjs';
 import { DesktopConfig, installService } from './config.mjs';
 
 const args = process.argv.slice(2), command = args[0] ?? 'help';
+const language = cliLanguage();
 const arg = (name, fallback) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };
 const stateDir = resolve(arg('--state', stateDirectory()));
 const port = Number(arg('--port', '47631'));
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('端口必须在 1024 到 65535 之间');
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error(localizeMessage('端口必须在 1024 到 65535 之间', language));
 const source = dirname(fileURLToPath(import.meta.url));
 
 async function acquireLock() {
@@ -40,7 +42,7 @@ async function runningStore() {
 }
 async function admin(path, body) {
   const store = await runningStore();
-  const r = await fetch(`http://127.0.0.1:${port}/admin/${path}`, { signal: AbortSignal.timeout(180_000), method: body ? 'POST' : 'GET', headers: { 'x-router-key': store.data.adminKey, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(`http://127.0.0.1:${port}/admin/${path}`, { signal: AbortSignal.timeout(180_000), method: body ? 'POST' : 'GET', headers: { 'x-router-key': store.data.adminKey, 'Accept-Language': language, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json();
   if (!r.ok) throw new RouterError(data.error?.message ?? '本地管理请求失败');
   return data;
@@ -69,7 +71,7 @@ async function main() {
       const fetcher = offline ? async () => { throw new RouterError('此实例为离线验证模式', 503); } : undefined;
       const server = await new RouterServer(store, { port, fetcher }).listen();
       if (!offline) server.startQuotaMonitor();
-      console.log(`${APP} 已启动，监听 127.0.0.1:${port}；不会自动修改客户端配置。`);
+      console.log(bilingual(language, `${APP} 已启动，监听 127.0.0.1:${port}。`, `${APP} is listening on 127.0.0.1:${port}.`));
       let stopping = false;
       const stop = async () => { if (stopping) return; stopping = true; await server.close(); await store.queue; await release(); process.exit(0); };
       server.shutdown = stop;
@@ -133,8 +135,8 @@ async function main() {
     // 服务意外停止时，仍可离线移除本工具管理的配置块。
     const store = await runningStore();
     const config = new DesktopConfig(store, port);
-    await config.disable(); console.log('已移除代理配置，请在任务结束后重新打开客户端。'); return;
+    await config.disable(); console.log(localizeMessage('已移除代理配置，请在任务结束后重新打开客户端。', language)); return;
   }
-  console.log('用法：node cli.mjs <install|launch|dashboard|stop|status|verify <账号编号>|enable|disable|serve> [--state 目录] [--port 端口]\n首次使用：install → dashboard → 连接并验证至少两个账号 → 启用 → 任务结束后手动重新打开桌面客户端。');
+  console.log(bilingual(language, '用法：node cli.mjs <install|launch|dashboard|stop|status|verify <账号编号>|enable|disable|serve> [--state 目录] [--port 端口]\n首次使用：install → dashboard → 连接并验证至少两个账号 → 启用 → 任务结束后手动重新打开桌面客户端。', 'Usage: node cli.mjs <install|launch|dashboard|stop|status|verify <account-slot>|enable|disable|serve> [--state DIR] [--port PORT]'));
 }
-main().catch(e => { console.error(e instanceof RouterError ? e.message : '操作失败，请检查网络、文件权限或后台服务状态。'); process.exitCode = 1; });
+main().catch(e => { console.error(localizeMessage(e instanceof RouterError ? e.message : '操作失败，请检查网络、文件权限或后台服务状态。', language)); process.exitCode = 1; });

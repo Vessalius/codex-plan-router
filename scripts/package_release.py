@@ -20,8 +20,8 @@ NODE_VERSION = (ROOT / '.node-version').read_text().strip()
 RELEASE_VERSION = json.loads((ROOT / 'package.json').read_text())['version']
 FILES = (
     'core.mjs', 'server.mjs', 'allocation.mjs', 'config.mjs', 'cli.mjs',
-    'platform.mjs', 'ui.mjs', 'quota.mjs', 'quota-native.mjs',
-    'package.json', 'README.md', 'LICENSE',
+    'platform.mjs', 'i18n.mjs', 'ui.mjs', 'quota.mjs', 'quota-native.mjs',
+    'package.json', 'README.md', 'README.en.md', 'LICENSE',
 )
 
 
@@ -132,8 +132,9 @@ Actions=Stop;
 
 [Desktop Action Stop]
 Name=Stop Codex Plan Router
+Name[zh_CN]=停止 Codex Plan Router
 Exec=codex-plan-router stop
-''', encoding='ascii')
+''', encoding='utf-8')
     subprocess.run(['dpkg-deb', '--root-owner-group', '--build', package, target], check=True)
 
 
