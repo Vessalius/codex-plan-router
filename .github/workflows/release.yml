@@ -77,4 +77,10 @@ jobs:
           files=(dist/*.zip dist/*.tar.gz)
           [[ ${#files[@]} -eq 6 ]]
           (cd dist && sha256sum -- *.zip *.tar.gz > SHA256SUMS.txt)
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --prerelease --notes-file RELEASE_NOTES.md "${files[@]}" dist/SHA256SUMS.txt
+          # 纯数字版本（如 v0.7.0）作为正式版发布，GitHub 会自动标记为 Latest；
+          # 带后缀的版本（如 v0.8.0-beta.1、v1.0.0-rc.2）才作为预发行版。
+          prerelease_args=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            prerelease_args=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" "${prerelease_args[@]}" --notes-file RELEASE_NOTES.md "${files[@]}" dist/SHA256SUMS.txt
