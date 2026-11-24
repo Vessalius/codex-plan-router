@@ -1,0 +1,80 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.platform }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: macos, arch: arm64, runner: macos-15}
+          - {platform: macos, arch: x64, runner: macos-15-intel}
+          - {platform: windows, arch: x64, runner: windows-2025}
+          - {platform: windows, arch: arm64, runner: windows-11-arm}
+          - {platform: linux, arch: x64, runner: ubuntu-24.04}
+          - {platform: linux, arch: arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.arch }}
+      - name: Build and verify package
+        shell: bash
+        env:
+          CODEX_ROUTER_PYTHON: ${{ steps.python.outputs.python-path }}
+          TARGET_OS: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [[ "$REF_TYPE" == tag ]]; then
+            python -c 'import json, os; assert os.environ["RELEASE_TAG"] == "v" + json.load(open("package.json"))["version"]'
+          fi
+          archive=$(python scripts/package_release.py "$TARGET_OS" "$TARGET_ARCH" | tail -n 1)
+          python scripts/check_release.py "$archive" --smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish verified archives
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          files=(dist/*.zip dist/*.tar.gz)
+          [[ ${#files[@]} -eq 6 ]]
+          (cd dist && sha256sum -- *.zip *.tar.gz > SHA256SUMS.txt)
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --prerelease --notes-file RELEASE_NOTES.md "${files[@]}" dist/SHA256SUMS.txt

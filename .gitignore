@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+node_modules/
+dist/
+*.app/
+__pycache__/
+*.pyc
+state.json
+auth.json
+quota-cache*.json
+quota-native-*/
+config-backup-*.toml
+*.log
+backups/
+test/reports/
