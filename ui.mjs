@@ -66,7 +66,7 @@ button{cursor:pointer;margin:4px 8px 4px 0}button.primary{background:#202d2a;col
 <header>
   <h1 data-msg="title"></h1>
   <label><span data-msg="language"></span> <select id="language">
-    <option value="system" data-msg="system"></option><option value="zh">简体中文</option><option value="en">English</option>
+    <option value="en">English</option><option value="zh">简体中文</option><option value="system" data-msg="system"></option>
   </select></label>
 </header>
 <p data-msg="intro"></p>
@@ -91,7 +91,7 @@ const messages = ${JSON.stringify(text).replaceAll('<', '\\u003c')};
 const $ = id => document.getElementById(id);
 const key = location.hash.slice(1);
 history.replaceState(null, '', '/');
-let preference = 'system', language = 'en', busy = false, snapshot;
+let preference = 'en', language = 'en', busy = false, snapshot;
 try {
   const stored = localStorage.getItem('routerLanguage');
   if (['system', 'zh', 'en'].includes(stored)) preference = stored;

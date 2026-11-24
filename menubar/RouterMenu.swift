@@ -4,11 +4,11 @@ import ServiceManagement
 import SwiftUI
 
 private enum AppLanguage: String, CaseIterable {
-    case system, en, zh
+    case en, zh, system
 
     static var selected: Self {
         let saved = UserDefaults.standard.string(forKey: "RouterLanguage") ?? ""
-        return Self(rawValue: saved) ?? .system
+        return Self(rawValue: saved) ?? .en
     }
 
     var code: String {
@@ -569,6 +569,7 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
         addAction(L("打开设置与账号管理…", "Settings and accounts…"), action: #selector(openDashboard), key: ",")
         addAction(L("查看官方用量…", "View official usage…"), action: #selector(openUsage))
         addAction(L("立即刷新", "Refresh now"), action: #selector(refreshNow), key: "r")
+        addLanguageMenu()
         menu.addItem(toggleItem)
         menu.addItem(refreshedItem)
         menu.addItem(.separator())
@@ -595,6 +596,36 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
     func menuWillOpen(_ menu: NSMenu) {
         refreshLoginItem()
         Task { await refresh(); await refreshQuota() }
+    }
+
+    private func addLanguageMenu() {
+        let item = NSMenuItem(title: "Language / 语言", action: nil, keyEquivalent: "")
+        let choices = NSMenu(title: item.title)
+        for language in AppLanguage.allCases {
+            let choice = NSMenuItem(title: language.label, action: #selector(selectMenuLanguage(_:)), keyEquivalent: "")
+            choice.target = self
+            choice.state = language == AppLanguage.selected ? .on : .off
+            choice.representedObject = language.rawValue
+            choices.addItem(choice)
+        }
+        item.submenu = choices
+        menu.addItem(item)
+    }
+
+    @objc private func selectMenuLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String, let language = AppLanguage(rawValue: code) else { return }
+        selectLanguage(language)
+    }
+
+    private func selectLanguage(_ language: AppLanguage) {
+        UserDefaults.standard.set(language.rawValue, forKey: "RouterLanguage")
+        settingsState.language = language
+        settingsWindow?.title = L("设置与账号管理", "Settings and Accounts")
+        settingsState.message = L("界面语言已更新。", "Language updated.")
+        if settingsState.pendingSwitch == nil {
+            settingsState.switchMessage = L("在 Codex 完成登录后，将自动核对账号并更新主号标记。", "After you sign in to Codex, the app checks the account and updates the primary label.")
+        }
+        rebuildMenu()
     }
 
     private func refreshLoginItem() {
@@ -871,14 +902,7 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
 
     private func settingsAction(_ action: String, slot: String) {
         if action == "language", let language = AppLanguage(rawValue: slot) {
-            UserDefaults.standard.set(language.rawValue, forKey: "RouterLanguage")
-            settingsState.language = language
-            settingsWindow?.title = L("设置与账号管理", "Settings and Accounts")
-            settingsState.message = L("界面语言已更新。", "Language updated.")
-            if settingsState.pendingSwitch == nil {
-                settingsState.switchMessage = L("在 Codex 完成登录后，将自动核对账号并更新主号标记。", "After you sign in to Codex, the app checks the account and updates the primary label.")
-            }
-            rebuildMenu()
+            selectLanguage(language)
             return
         }
         if action == "switch" { beginDesktopSwitch(slot: slot); return }

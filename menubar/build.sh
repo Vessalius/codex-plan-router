@@ -18,8 +18,8 @@ cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>RouterMenu</string>
 <key>CFBundleIconFile</key><string>Router.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.7.5</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>0.7.6</string>
+<key>CFBundleVersion</key><string>16</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>

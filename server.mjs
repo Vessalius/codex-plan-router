@@ -16,7 +16,7 @@ function reply(res, status, value, type = 'application/json; charset=utf-8') {
   res.end(typeof value === 'string' ? value : JSON.stringify(value));
 }
 function requestLanguage(req) {
-  return languageFrom(req.headers['accept-language']);
+  return languageFrom(req.headers['accept-language'], 'en');
 }
 function authPage(language, title, message) {
   const escape = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

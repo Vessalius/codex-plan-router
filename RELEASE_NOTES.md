@@ -1,11 +1,9 @@
-## 中文
-
-- 软件现支持简体中文和英文。macOS 菜单栏与原生设置、Windows 和 Linux 的本机设置页均可切换语言。
-- 默认跟随系统或浏览器语言，选择会保存在本机。
-- GitHub README 新增完整英文版。
-
 ## English
 
-- English and Simplified Chinese are available in the macOS menu bar and native Settings, and in the Windows and Linux dashboard.
-- The UI follows the system or browser language by default. Your selection is saved locally.
-- The GitHub README has a complete English edition.
+- English is now the default for new installations. Existing language choices are kept.
+- The macOS menu bar now has a **Language / 语言** submenu for switching languages without opening Settings or restarting the app.
+
+## 中文
+
+- 新安装默认使用英文，已保存的语言选择会保留。
+- macOS 状态栏新增 **「Language / 语言」** 菜单，可直接切换，无需打开设置或重启。

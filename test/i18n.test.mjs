@@ -11,7 +11,7 @@ test('language preference recognizes Simplified Chinese and respects HTTP priori
   assert.equal(localizeMessage('模型列表查询失败（429）', 'en'), 'Model list request failed (HTTP 429).');
 });
 
-test('dashboard switches all static labels and remembers the choice', () => {
+test('dashboard defaults to English, can follow the browser, and remembers a manual choice', () => {
   const title = { dataset: { msg: 'title' } };
   const routing = { dataset: { msg: 'routing' } };
   const nodes = new Map();
@@ -36,13 +36,15 @@ test('dashboard switches all static labels and remembers the choice', () => {
   };
   const script = HTML.split('<script>')[1].split('</script>')[0];
   vm.runInNewContext(script, { ...context });
-  assert.equal(document.documentElement.lang, 'zh-CN');
-  assert.equal(routing.textContent, '请求分配');
-  nodes.get('language').onchange({ target: { value: 'en' } });
   assert.equal(document.documentElement.lang, 'en');
   assert.equal(title.textContent, 'Codex Plan Router');
   assert.equal(routing.textContent, 'Request routing');
-  assert.equal(stored.get('routerLanguage'), 'en');
+  nodes.get('language').onchange({ target: { value: 'system' } });
+  assert.equal(routing.textContent, '请求分配');
+  nodes.get('language').onchange({ target: { value: 'zh' } });
+  assert.equal(document.documentElement.lang, 'zh-CN');
+  assert.equal(stored.get('routerLanguage'), 'zh');
+  context.navigator.language = 'en-US';
   vm.runInNewContext(script, { ...context });
-  assert.equal(routing.textContent, 'Request routing');
+  assert.equal(routing.textContent, '请求分配');
 });

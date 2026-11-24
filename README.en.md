@@ -33,7 +33,7 @@ Subscription authorization is for model requests, and quota authorization is for
 
 ## Interface languages
 
-The app supports English and Simplified Chinese. macOS Settings follows the system language by default. The Windows and Linux dashboard follows the browser language. You can pick a language in Settings, and your preference is saved locally. For command-line output, set `CODEX_ROUTER_LANGUAGE` to `en` or `zh`.
+The app defaults to English. On macOS, select **Language / 语言** in the menu bar, or change the language in Settings. On Windows and Linux, use the dashboard language selector. You can also follow the system or browser language. Your selection is saved locally. Set `CODEX_ROUTER_LANGUAGE=zh` for Chinese command-line output.
 
 ## Install by platform
 
