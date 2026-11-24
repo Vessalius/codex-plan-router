@@ -27,13 +27,13 @@ Each account uses its own quota. Desktop logins, cloud conversations, and quotas
 1. Download the installer for your system and open the app.
 2. Select **Add account** and authorize on the official OpenAI page. Repeat for any other accounts you want to connect.
 3. On macOS, select **Authorize quota** on each account card you want to monitor independently. `--` means data is unavailable. An asterisk marks a cached value.
-4. To use routing, verify at least two accounts and select **Enable desktop proxy**. Each verification sends a short model request and uses some subscription quota. Finish your Codex tasks, then reopen Codex for the connection change to take effect.
+4. To use routing, verify at least two accounts and select **Enable desktop proxy**. Each verification sends a short model request and uses some subscription quota. Enabling or disabling the proxy shows a Restart Codex prompt. Finish your tasks, then quit and reopen Codex to apply the change.
 
 Subscription authorization is for model requests, and quota authorization is for reading usage. You can use quota monitoring with a direct Codex connection. To stop routing, choose **Restore direct connection**, finish running tasks, and reopen Codex.
 
 ## Interface languages
 
-The app defaults to English. On macOS, select **Language / 语言** in the menu bar, or change the language in Settings. On Windows and Linux, use the dashboard language selector. You can also follow the system or browser language. Your selection is saved locally. Set `CODEX_ROUTER_LANGUAGE=zh` for Chinese command-line output.
+The app follows the system language on macOS and the browser language on Windows and Linux by default. On macOS, select **Language / 语言** in the menu bar, or change the language in Settings. On Windows and Linux, use the dashboard language selector. You can also follow the system or browser language. Your selection is saved locally. Set `CODEX_ROUTER_LANGUAGE=zh` for Chinese command-line output.
 
 ## Install by platform
 

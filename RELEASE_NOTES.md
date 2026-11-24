@@ -1,9 +1,9 @@
 ## English
 
-- English is now the default for new installations. Existing language choices are kept.
-- The macOS menu bar now has a **Language / 语言** submenu for switching languages without opening Settings or restarting the app.
+- Enabling or disabling the desktop proxy now shows a **Restart Codex** prompt on macOS, Windows, and Linux. Finish your current tasks before quitting and reopening Codex.
+- The default again follows the system language on macOS and the browser language on Windows and Linux. The macOS menu bar keeps the **Language / 语言** submenu.
 
 ## 中文
 
-- 新安装默认使用英文，已保存的语言选择会保留。
-- macOS 状态栏新增 **「Language / 语言」** 菜单，可直接切换，无需打开设置或重启。
+- macOS、Windows 和 Linux 开启或关闭桌面代理后，都会弹出 **「请重启 Codex」**。请等当前任务完成，再退出并重新打开 Codex。
+- 默认跟随系统或浏览器语言，macOS 状态栏仍可通过 **「Language / 语言」** 快速切换。

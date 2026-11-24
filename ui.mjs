@@ -16,6 +16,10 @@ const text = {
   enable: ['启用桌面代理', 'Enable desktop proxy'],
   disable: ['恢复官方直连', 'Restore direct connection'],
   restart: ['更改连接后，等任务完成再重新打开 Codex。', 'After changing the connection, finish your tasks and reopen Codex.'],
+  restartTitle: ['请重启 Codex', 'Restart Codex'],
+  restartAfterEnable: ['已设置为本地代理。请等当前任务完成，再退出并重新打开 Codex 以应用配置。', 'The local proxy is configured. Finish your current tasks, then quit and reopen Codex to apply the change.'],
+  restartAfterDisable: ['已设置为官方直连。请等当前任务完成，再退出并重新打开 Codex 以应用配置。', 'The direct connection is configured. Finish your current tasks, then quit and reopen Codex to apply the change.'],
+  acknowledge: ['知道了', 'OK'],
   routing: ['请求分配', 'Request routing'],
   policy: ['新请求优先按五小时、每周剩余额度和重置时间分配。额度数据不完整时，参考近期观察用量。', 'New requests are routed using 5-hour and weekly quota and reset times. If quota data is incomplete, routing uses recent observed usage.'],
   context: ['已有上下文通常沿用原账号。响应开始后，代理不会换账号重发。', 'Existing context normally stays with its original account. The proxy never retries a response with another account once streaming begins.'],
@@ -62,11 +66,13 @@ button,select{font:inherit;font-size:14px;padding:7px 11px;border:1px solid #aaa
 button{cursor:pointer;margin:4px 8px 4px 0}button.primary{background:#202d2a;color:white}button:disabled{opacity:.5;cursor:default}
 .muted{color:#666;font-size:14px}#message{white-space:pre-wrap}a{color:#176445}.error{color:#a12828}
 .account + .account{border-top:1px solid #eee;margin-top:14px}
+dialog{box-sizing:border-box;width:min(460px,calc(100% - 32px));padding:24px;border:1px solid #ddd;border-radius:14px;color:inherit}
+dialog::backdrop{background:rgba(0,0,0,.36)}dialog form{margin-top:16px;text-align:right}
 </style>
 <header>
   <h1 data-msg="title"></h1>
   <label><span data-msg="language"></span> <select id="language">
-    <option value="en">English</option><option value="zh">简体中文</option><option value="system" data-msg="system"></option>
+    <option value="system" data-msg="system"></option><option value="en">English</option><option value="zh">简体中文</option>
   </select></label>
 </header>
 <p data-msg="intro"></p>
@@ -86,12 +92,17 @@ button{cursor:pointer;margin:4px 8px 4px 0}button.primary{background:#202d2a;col
   <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer" data-msg="manageUsage"></a>
 </section>
 <section id="message" role="status"></section>
+<dialog id="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-body">
+  <h2 id="restart-title" data-msg="restartTitle"></h2>
+  <p id="restart-body"></p>
+  <form method="dialog"><button class="primary" data-msg="acknowledge" autofocus></button></form>
+</dialog>
 <script>
 const messages = ${JSON.stringify(text).replaceAll('<', '\\u003c')};
 const $ = id => document.getElementById(id);
 const key = location.hash.slice(1);
 history.replaceState(null, '', '/');
-let preference = 'en', language = 'en', busy = false, snapshot;
+let preference = 'system', language = 'en', busy = false, snapshot;
 try {
   const stored = localStorage.getItem('routerLanguage');
   if (['system', 'zh', 'en'].includes(stored)) preference = stored;
@@ -123,7 +134,7 @@ function show(value, error = false) {
 async function act(action) {
   if (busy) return;
   busy = true;
-  document.querySelectorAll('button,#language,#primary-slot').forEach(node => { node.disabled = true; });
+  document.querySelectorAll('section button,#language,#primary-slot').forEach(node => { node.disabled = true; });
   try { await action(); } catch (error) { show(error.message, true); }
   finally { busy = false; $('language').disabled = false; await refresh(); }
 }
@@ -210,10 +221,20 @@ $('primary-slot').onchange = event => {
   const slot = event.target.value;
   act(async () => { await api('primary', { slot }); show(t('primarySaved')); });
 };
+async function changeConnection(enabled) {
+  await api(enabled ? 'enable' : 'disable', {});
+  const message = t(enabled ? 'restartAfterEnable' : 'restartAfterDisable');
+  show(message);
+  $('restart-body').textContent = message;
+  const dialog = $('restart-dialog');
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else alert(t('restartTitle') + '. ' + message);
+}
 $('enable').onclick = () => {
-  if (confirm(t('enablePrompt'))) act(async () => show((await api('enable', {})).message));
+  if (confirm(t('enablePrompt'))) return act(() => changeConnection(true));
 };
-$('disable').onclick = () => act(async () => show((await api('disable', {})).message));
+$('disable').onclick = () => act(() => changeConnection(false));
 applyLanguage();
 if (key) { refresh(); setInterval(() => { if (!busy) refresh(); }, 5000); }
 </script></html>`;

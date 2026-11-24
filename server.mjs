@@ -4,7 +4,7 @@ import { gunzipSync, inflateSync, brotliDecompressSync, zstdDecompressSync } fro
 import { Auth, Scheduler, SSEObserver, RouterError, API, APP, compatible, equal, isAccountSlot, officialFetch } from './core.mjs';
 import { DesktopConfig } from './config.mjs';
 import { HTML } from './ui.mjs';
-import { bilingual, languageFrom, localizeMessage } from './i18n.mjs';
+import { bilingual, cliLanguage, languageFrom, localizeMessage } from './i18n.mjs';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { QUOTA_QUERY_CONCURRENCY } from './quota.mjs';
@@ -16,7 +16,7 @@ function reply(res, status, value, type = 'application/json; charset=utf-8') {
   res.end(typeof value === 'string' ? value : JSON.stringify(value));
 }
 function requestLanguage(req) {
-  return languageFrom(req.headers['accept-language'], 'en');
+  return languageFrom(req.headers['accept-language'], cliLanguage());
 }
 function authPage(language, title, message) {
   const escape = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

@@ -99,7 +99,7 @@ export const languageFrom = (preference, fallback = 'zh') => {
   return best?.code.startsWith('zh') ? 'zh' : 'en';
 };
 
-export const cliLanguage = () => languageFrom(process.env.CODEX_ROUTER_LANGUAGE, 'en');
+export const cliLanguage = () => languageFrom(process.env.CODEX_ROUTER_LANGUAGE || Intl.DateTimeFormat().resolvedOptions().locale, 'en');
 export const bilingual = (language, zh, en) => language === 'zh' ? zh : en;
 
 export function localizeMessage(value, language) {

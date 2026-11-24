@@ -8,7 +8,7 @@ private enum AppLanguage: String, CaseIterable {
 
     static var selected: Self {
         let saved = UserDefaults.standard.string(forKey: "RouterLanguage") ?? ""
-        return Self(rawValue: saved) ?? .en
+        return Self(rawValue: saved) ?? .system
     }
 
     var code: String {
@@ -1011,7 +1011,11 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
             do {
                 _ = try await request(disabling ? "disable" : "enable", post: true)
                 await refresh()
-                showMessage(L("配置已更新", "Configuration updated"), message: L("请等所有任务结束后，手动退出并重新打开 Codex。当前聊天不会被本工具重启。", "Finish your tasks, then quit and reopen Codex to apply the change."))
+                let connection = disabling
+                    ? L("已设置为官方直连。", "The direct connection is configured.")
+                    : L("已设置为本地代理。", "The local proxy is configured.")
+                showMessage(L("请重启 Codex", "Restart Codex"),
+                            message: connection + " " + L("请等当前任务完成，再退出并重新打开 Codex 以应用配置。", "Finish your current tasks, then quit and reopen Codex to apply the change."))
             } catch { showMessage(L("配置未能更新", "Could not update configuration"), message: error.localizedDescription) }
         }
     }
