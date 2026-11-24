@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ServiceManagement
 import SwiftUI
 
 private let appName = "Codex 多账号代理"
@@ -108,16 +109,29 @@ private func statusImage(symbol: String, quota: QuotaCollection?) -> NSImage {
     return image
 }
 
+private let legacyServiceURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/LaunchAgents/com.sun.codex-plan-router.plist")
+private let savedServiceURL = stateURL.deletingLastPathComponent()
+    .appendingPathComponent("legacy-service.plist")
+private let bundledBackend = Bundle.main.resourceURL?.appendingPathComponent("RouterBackend")
+
 private func quotaProcess(script: String, arguments: [String]) -> Process? {
     let home = FileManager.default.homeDirectoryForCurrentUser
-    let plist = home.appendingPathComponent("Library/LaunchAgents/com.sun.codex-plan-router.plist")
-    guard let data = try? Data(contentsOf: plist),
-          let settings = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-          let serviceArguments = settings["ProgramArguments"] as? [String], let node = serviceArguments.first,
-          FileManager.default.isExecutableFile(atPath: node) else { return nil }
+    let plist = FileManager.default.fileExists(atPath: legacyServiceURL.path) ? legacyServiceURL : savedServiceURL
+    let data = try? Data(contentsOf: plist)
+    let settings = data.flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] } ?? [:]
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: node)
-    process.arguments = [home.appendingPathComponent(".local/share/codex-plan-router").appendingPathComponent(script).path] + arguments
+    if let bundledBackend {
+        process.executableURL = bundledBackend.appendingPathComponent("runtime/node")
+        process.arguments = [bundledBackend.appendingPathComponent(script).path] + arguments
+    } else {
+        guard let serviceArguments = settings["ProgramArguments"] as? [String],
+              let node = serviceArguments.first else { return nil }
+        process.executableURL = URL(fileURLWithPath: node)
+        process.arguments = [home.appendingPathComponent(".local/share/codex-plan-router").appendingPathComponent(script).path] + arguments
+    }
+    guard let executable = process.executableURL,
+          FileManager.default.isExecutableFile(atPath: executable.path) else { return nil }
     var env = ["HOME": home.path, "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "NODE_USE_ENV_PROXY": "1", "NO_PROXY": "localhost,127.0.0.1,::1"]
     // 复用已安装后台服务的无凭据回环代理，不复制任何其他环境或认证值。
     let existing = settings["EnvironmentVariables"] as? [String: String] ?? [:]
@@ -202,6 +216,7 @@ private final class SettingsState: ObservableObject {
     @Published var message = "额度每分钟更新；账号授权保存在本机。"
     @Published var nativeEmail: String?
     @Published var quotaLoginSlot: String?
+    @Published var usingLegacyBackend = false
     @Published var targetSlot = "a"
     @Published var pendingSwitch: String?
     @Published var switchMessage = "在 Codex 完成登录后，将自动核对账号并更新主号标记。"
@@ -225,6 +240,9 @@ private struct NativeSettingsView: View {
                 }
                 Text(state.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if state.usingLegacyBackend {
+                    Button("迁移到 App 内置后台…") { state.action?("adoptBackend", "") }
+                }
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("账号").font(.headline)
@@ -346,6 +364,7 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
     private let refreshedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let quotaItem = NSMenuItem(title: "官方剩余额度：正在获取…", action: nil, keyEquivalent: "")
     private let toggleItem = NSMenuItem(title: "恢复官方直连", action: #selector(toggleMode), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "登录时启动", action: #selector(toggleLoginItem), keyEquivalent: "")
     private let accountsMenu = NSMenu()
     private var quotaLoginProcess: Process?
     private let session = makeSession()
@@ -360,6 +379,124 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
     private var settingsWindow: NSWindow?
     private var switchStartedAt: Date?
     private var lastQuotaAttempt = Date.distantPast
+
+    private var backendProcess: Process?
+    private var backendInput: Pipe?
+    private var waitingToQuit = false
+
+    private func startBundledService() throws {
+        guard bundledBackend != nil, backendProcess == nil else { return }
+        guard let process = quotaProcess(script: "cli.mjs", arguments: ["serve", "--parent-pipe"]) else {
+            throw MenuError.service("App 内缺少后台运行文件。")
+        }
+        let input = Pipe()
+        process.standardInput = input
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.backendProcess = nil
+                self.backendInput = nil
+                if self.waitingToQuit {
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                } else {
+                    self.settingsState.message = "内置后台已停止。可点「刷新」重试。"
+                }
+            }
+        }
+        try process.run()
+        backendInput = input
+        backendProcess = process
+    }
+
+    private func prepareBundledService() async {
+        guard bundledBackend != nil else { return }
+        let legacyJob = "gui/\(getuid())/com.sun.codex-plan-router"
+        let legacyLoaded = await launchctl(["print", legacyJob])
+        settingsState.usingLegacyBackend = legacyLoaded && FileManager.default.fileExists(atPath: legacyServiceURL.path)
+        if settingsState.usingLegacyBackend {
+            settingsState.message = "检测到旧版后台。等 Codex 任务结束后，可以在这里迁移。"
+            return
+        }
+        do {
+            try startBundledService()
+            for _ in 0..<20 {
+                guard backendProcess?.isRunning == true else { break }
+                try await Task.sleep(nanoseconds: 150_000_000)
+                var health = URLRequest(url: URL(string: baseURL + "/health")!)
+                health.timeoutInterval = 1
+                if let (_, response) = try? await session.data(for: health),
+                   (response as? HTTPURLResponse)?.statusCode == 200 { return }
+            }
+            settingsState.message = "内置后台暂未就绪，请点「刷新」重试。"
+        } catch { settingsState.message = error.localizedDescription }
+    }
+
+    private func launchctl(_ arguments: [String]) async -> Bool {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return false }
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }.value
+    }
+
+    private func adoptBackend() {
+        guard settingsState.usingLegacyBackend, !settingsState.busy else { return }
+        let alert = NSAlert()
+        alert.messageText = "迁移到 App 内置后台？"
+        alert.informativeText = "等 Codex 任务结束后再迁移。切换期间代理会短暂断开，账号和额度数据会保留。"
+        alert.addButton(withTitle: "迁移")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        settingsState.busy = true
+        Task {
+            defer { settingsState.busy = false }
+            let domain = "gui/\(getuid())"
+            let service = domain + "/com.sun.codex-plan-router"
+            let manager = FileManager.default
+            do {
+                guard !manager.fileExists(atPath: savedServiceURL.path) else {
+                    throw MenuError.service("已有旧服务备份，请先检查本机服务状态。")
+                }
+                let data = try await request("status")
+                guard let status = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      status["activeRequests"] as? Int == 0 else {
+                    throw MenuError.service("代理还有请求在运行，请等任务结束后重试。")
+                }
+                try manager.moveItem(at: legacyServiceURL, to: savedServiceURL)
+                guard await launchctl(["bootout", service]) else {
+                    try manager.moveItem(at: savedServiceURL, to: legacyServiceURL)
+                    throw MenuError.service("未能停止旧版后台。")
+                }
+                do {
+                    try startBundledService()
+                    var ready = false
+                    for _ in 0..<20 {
+                        try await Task.sleep(nanoseconds: 250_000_000)
+                        if backendProcess?.isRunning == true, (try? await request("status")) != nil { ready = true; break }
+                    }
+                    guard ready else { throw MenuError.service("内置后台未能就绪。") }
+                } catch {
+                    if let process = backendProcess, process.isRunning {
+                        try? backendInput?.fileHandleForWriting.close()
+                        await Task.detached { process.waitUntilExit() }.value
+                    }
+                    try manager.moveItem(at: savedServiceURL, to: legacyServiceURL)
+                    let restored = await launchctl(["bootstrap", domain, legacyServiceURL.path])
+                    throw MenuError.service(restored ? "迁移未完成，已恢复旧版后台。" : "迁移未完成，旧版服务配置已恢复，但需要重新登录 macOS 启动。")
+                }
+                settingsState.usingLegacyBackend = false
+                settingsState.message = "迁移完成，后台现在由 App 管理。"
+                await refresh()
+            } catch { settingsState.message = error.localizedDescription }
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -386,7 +523,10 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
         menu.addItem(toggleItem)
         menu.addItem(refreshedItem)
         menu.addItem(.separator())
-        addAction("退出菜单栏图标（后台代理继续运行）", action: #selector(quitMenu), key: "q")
+        loginItem.target = self
+        menu.addItem(loginItem)
+        refreshLoginItem()
+        addAction("退出 Codex Plan Router", action: #selector(quitMenu), key: "q")
         for item in [serviceItem, modeItem, countsItem, quotaItem, refreshedItem] { item.isEnabled = false }
         toggleItem.target = self
         toggleItem.isEnabled = false
@@ -395,8 +535,11 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
             Task { @MainActor in await self?.refresh(); await self?.refreshQuota() }
         }
         RunLoop.main.add(timer!, forMode: .common)
-        Task { await refresh(); await refreshQuota() }
-        if CommandLine.arguments.contains("--settings") { openDashboard() }
+        Task { await prepareBundledService(); await refresh(); await refreshQuota() }
+        if CommandLine.arguments.contains("--settings")
+            || (bundledBackend != nil && !FileManager.default.fileExists(atPath: stateURL.path)) {
+            openDashboard()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -405,7 +548,48 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        refreshLoginItem()
         Task { await refresh(); await refreshQuota() }
+    }
+
+    private func refreshLoginItem() {
+        let status = SMAppService.mainApp.status
+        loginItem.title = status == .requiresApproval ? "登录时启动（待批准）" : "登录时启动"
+        loginItem.state = status == .enabled ? .on : status == .requiresApproval ? .mixed : .off
+    }
+
+    @objc private func toggleLoginItem() {
+        if Bundle.main.bundlePath.hasPrefix("/Volumes/") {
+            showMessage("请先安装 App", message: "将 App 拖入「应用程序」后，重新打开再设置登录时启动。")
+            return
+        }
+
+        let service = SMAppService.mainApp
+        defer { refreshLoginItem() }
+        do {
+            switch service.status {
+            case .enabled:
+                try service.unregister()
+            case .requiresApproval:
+                let alert = NSAlert()
+                alert.messageText = "登录时启动需要批准"
+                alert.informativeText = "在 macOS 的「登录项」中允许 Codex Plan Router。"
+                alert.addButton(withTitle: "打开系统设置")
+                alert.addButton(withTitle: "取消")
+                alert.addButton(withTitle: "关闭自启动")
+                NSApp.activate(ignoringOtherApps: true)
+                let choice = alert.runModal()
+                if choice == .alertFirstButtonReturn { SMAppService.openSystemSettingsLoginItems() }
+                if choice == .alertThirdButtonReturn { try service.unregister() }
+            case .notRegistered, .notFound:
+                try service.register()
+                if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+            @unknown default:
+                showMessage("暂时无法修改登录项", message: "请在 macOS「系统设置 → 通用 → 登录项」中查看。")
+            }
+        } catch {
+            showMessage("登录项设置未完成", message: error.localizedDescription)
+        }
     }
 
     private func addInfo(_ title: String, bold: Bool = false) {
@@ -647,7 +831,11 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
             settingsState.switchMessage = "已取消等待，主号标记保持原值。"
             return
         }
-        if action == "refresh" { refreshNow(); return }
+        if action == "adoptBackend" { adoptBackend(); return }
+        if action == "refresh" {
+            Task { await prepareBundledService(); await refresh(); await refreshQuota(force: true) }
+            return
+        }
         if action == "quota" { authorizeQuota(slot: slot); return }
         if action == "usage" { openUsage(); return }
         if action == "mode" { toggleMode(); return }
@@ -756,7 +944,24 @@ private final class MenuController: NSObject, NSApplicationDelegate, NSMenuDeleg
         alert.runModal()
     }
 
-    @objc private func quitMenu() { NSApp.terminate(nil) }
+    @objc private func quitMenu() {
+        if backendProcess?.isRunning == true && snapshot?.desktop.enabled == true {
+            let alert = NSAlert()
+            alert.messageText = "退出并停止后台？"
+            alert.informativeText = "若 Codex 仍启用本地代理，退出后请求会暂停。可以重新打开本 App，或先在设置里恢复官方直连。"
+            alert.addButton(withTitle: "继续运行")
+            alert.addButton(withTitle: "退出")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        NSApp.terminate(nil)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard backendProcess?.isRunning == true else { return .terminateNow }
+        waitingToQuit = true
+        try? backendInput?.fileHandleForWriting.close()
+        return .terminateLater
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()

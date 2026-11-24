@@ -33,7 +33,16 @@ jobs:
         with:
           python-version: '3.13'
           architecture: ${{ matrix.arch }}
-      - name: Build and verify package
+      - name: Install NSIS
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and
+              -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis --no-progress -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build and verify installer
         shell: bash
         env:
           CODEX_ROUTER_PYTHON: ${{ steps.python.outputs.python-path }}
@@ -43,10 +52,10 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           if [[ "$REF_TYPE" == tag ]]; then
-            python -c 'import json, os; assert os.environ["RELEASE_TAG"] == "v" + json.load(open("package.json"))["version"]'
+            python -c 'import json, os; assert os.environ["RELEASE_TAG"].split("-", 1)[0] == "v" + json.load(open("package.json"))["version"]'
           fi
           archive=$(python scripts/package_release.py "$TARGET_OS" "$TARGET_ARCH" | tail -n 1)
-          python scripts/check_release.py "$archive" --smoke
+          python scripts/check_release.py "$archive"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}-${{ matrix.arch }}
@@ -68,17 +77,19 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - name: Publish verified archives
+      - name: Publish verified installers
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          files=(dist/*.zip dist/*.tar.gz)
-          [[ ${#files[@]} -eq 6 ]]
-          (cd dist && sha256sum -- *.zip *.tar.gz > SHA256SUMS.txt)
-          # 纯数字版本（如 v0.7.0）作为正式版发布，GitHub 会自动标记为 Latest；
-          # 带后缀的版本（如 v0.8.0-beta.1、v1.0.0-rc.2）才作为预发行版。
+          shopt -s nullglob
+          mac=(dist/*.dmg)
+          windows=(dist/*.exe)
+          linux=(dist/*.deb)
+          [[ ${#mac[@]} -eq 2 && ${#windows[@]} -eq 2 && ${#linux[@]} -eq 2 ]]
+          files=("${mac[@]}" "${windows[@]}" "${linux[@]}")
+          (cd dist && sha256sum -- *.dmg *.exe *.deb > SHA256SUMS.txt)
           prerelease_args=()
           if [[ "$RELEASE_TAG" == *-* ]]; then
             prerelease_args=(--prerelease)

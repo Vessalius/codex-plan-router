@@ -74,6 +74,12 @@ export class RouterServer {
       if (url.pathname === '/admin/status' && req.method === 'GET') return reply(res, 200, await this.status());
       if (req.method !== 'POST') throw new RouterError('方法不允许', 405);
       const body = parseBody(await readBody(req));
+      if (url.pathname === '/admin/shutdown' && this.shutdown) {
+        if (this.activeRequests > 1) throw new RouterError('请等待当前任务结束后再停止后台', 409);
+        if (body.restore === true) await this.config.disable();
+        res.once('finish', () => void this.shutdown());
+        return reply(res, 200, { ok: true });
+      }
       if (url.pathname === '/admin/login') return reply(res, 200, { url: await this.auth.begin(body.slot === '' ? null : body.slot) });
       if (url.pathname === '/admin/verify') return reply(res, 200, await this.verifyAccount(body.slot));
       if (url.pathname === '/admin/primary') {

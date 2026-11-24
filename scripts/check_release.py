@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Verify and smoke-test an archive on a matching host."""
+"""Install or mount a release artifact and check it with an offline backend."""
 from argparse import ArgumentParser
 from hashlib import sha256
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import platform
-import shutil
-import signal
 import socket
 import subprocess
-import tarfile
 from tempfile import TemporaryDirectory
 import time
 from urllib.request import ProxyHandler, build_opener
-from zipfile import ZipFile
 
 
 def smoke(bundle, root):
@@ -22,66 +18,81 @@ def smoke(bundle, root):
     source = bundle / 'cli.mjs'
     arch = {'amd64': 'x64', 'x86_64': 'x64', 'arm64': 'arm64', 'aarch64': 'arm64'}[platform.machine().lower()]
     assert subprocess.check_output([node, '-p', 'process.arch'], text=True).strip() == arch
+    assert not any((bundle / name).exists() for name in ('state.json', 'auth.json', 'test', 'backups'))
     snapshot = root / 'test-state'
     env = {**os.environ, 'CODEX_HOME': str(root / 'fake-codex'), 'NODE_USE_ENV_PROXY': '0'}
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     flags = ['--state', str(snapshot), '--port', str(port)]
-    server = subprocess.Popen([node, source, 'serve', *flags], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    server = subprocess.Popen([node, source, 'serve', *flags, '--offline', '--parent-pipe'],
+                              env=env, stdin=subprocess.PIPE)
     try:
         opener = build_opener(ProxyHandler({}))
-        for _ in range(40):
+        for _ in range(50):
             try:
                 with opener.open(f'http://127.0.0.1:{port}/health', timeout=1) as response:
-                    if json.load(response).get('app') == 'Codex Plan Router':
-                        break
+                    assert json.load(response).get('app') == 'Codex Plan Router'
+                    break
             except OSError:
                 if server.poll() is not None:
                     raise RuntimeError('Packaged router exited at startup')
-            time.sleep(0.1)
+                time.sleep(0.1)
         else:
             raise RuntimeError('Packaged router did not become ready')
-        status = json.loads(subprocess.check_output([node, source, 'status', *flags], env=env, text=True))
+        status = json.loads(subprocess.check_output([node, source, 'status', *flags], env=env, text=True,
+                                                    encoding='utf-8'))
         assert status['desktop']['enabled'] is False
         assert not any(account['registered'] for account in status['accounts'])
+        subprocess.run([node, source, 'stop', *flags], check=True, timeout=15, env=env)
+        assert server.wait(timeout=10) == 0
+        assert not (snapshot / 'daemon.lock').exists()
     finally:
+        server.stdin.close()
         if server.poll() is None:
-            server.terminate() if os.name == 'nt' else server.send_signal(signal.SIGTERM)
-        server.communicate(timeout=15)
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
 
 
 def main():
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument('archive', type=Path)
-    parser.add_argument('--smoke', action='store_true')
-    args = parser.parse_args()
-    forbidden = {'state.json', 'auth.json', '.env', 'backups', 'test', 'reports', '.git'}
-    is_zip = args.archive.suffix == '.zip'
-    archive = ZipFile(args.archive) if is_zip else tarfile.open(args.archive)
-    with TemporaryDirectory(prefix='codex-router-check-') as directory, archive:
+    parser.add_argument('installer', type=Path)
+    artifact = parser.parse_args().installer.resolve()
+    with TemporaryDirectory(prefix='codex-router-check-') as directory:
         root = Path(directory)
-        names = archive.namelist() if is_zip else archive.getnames()
-        parts = [PurePosixPath(name).parts for name in names]
-        assert parts and len({name[0] for name in parts}) == 1
-        assert all(not forbidden.intersection(name) and all(not part.startswith('quota-cache') for part in name) for name in parts)
-        prefix = parts[0][0]
-        required = ['cli.mjs', 'platform.mjs', 'README.md', 'LICENSE', 'runtime/LICENSE']
-        required.append('runtime/node.exe' if '-windows-' in prefix else 'runtime/node')
-        assert all(f'{prefix}/{name}' in names for name in required)
-        if args.smoke:
-            if is_zip:
-                # macOS 需要保留 ZIP 中的可执行权限和代码签名。
-                if platform.system() == 'Darwin':
-                    subprocess.run(['/usr/bin/ditto', '-x', '-k', args.archive, root], check=True)
-                else:
-                    archive.extractall(root)
-            else:
-                archive.extractall(root, filter='data')
-            if platform.system() == 'Darwin':
-                subprocess.run(['/usr/bin/codesign', '--verify', '--strict', root / prefix / 'Codex Plan Router.app'], check=True)
-            smoke(root / prefix, root)
-    print(f'{sha256(args.archive.read_bytes()).hexdigest()}  {args.archive.name}')
+        if artifact.suffix == '.dmg':
+            subprocess.run(['hdiutil', 'verify', artifact], check=True)
+            mount = root / 'mount'
+            mount.mkdir()
+            subprocess.run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, artifact], check=True)
+            try:
+                app = mount / 'Codex Plan Router.app'
+                assert (mount / 'Applications').readlink() == Path('/Applications')
+                assert (app / 'Contents/Resources/Router.icns').is_file()
+                subprocess.run(['codesign', '--verify', '--strict', app], check=True)
+                smoke(app / 'Contents/Resources/RouterBackend', root)
+            finally:
+                subprocess.run(['hdiutil', 'detach', mount], check=True)
+        elif artifact.suffix == '.exe':
+            target = root / 'installed'
+            subprocess.run(f'"{artifact}" /S /D={target}', check=True, timeout=120)
+            assert (target / 'Uninstall.exe').is_file()
+            smoke(target, root)
+        elif artifact.suffix == '.deb':
+            dpkg_arch = subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip()
+            package_arch = subprocess.check_output(['dpkg-deb', '--field', artifact, 'Architecture'], text=True).strip()
+            assert dpkg_arch == package_arch
+            target = root / 'installed'
+            subprocess.run(['dpkg-deb', '--extract', artifact, target], check=True)
+            assert os.access(target / 'usr/bin/codex-plan-router', os.X_OK)
+            assert (target / 'usr/share/applications/codex-plan-router.desktop').is_file()
+            smoke(target / 'usr/lib/codex-plan-router', root)
+        else:
+            parser.error('expected .dmg, .exe or .deb')
+    print(f'{sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}')
 
 
 if __name__ == '__main__':

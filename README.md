@@ -6,22 +6,22 @@
 
 ## 下载和启动
 
-Release 提供以下架构。所有便携包附带 Node.js 运行时及其许可文件。
+在 GitHub Releases 选择与你的系统和 CPU 架构相符的安装文件。所有安装包附带 Node.js 及其许可。
 
-| 平台 | 架构 | 发行包与启动方法 |
+| 平台 | 架构 | 安装与启动 |
 | --- | --- | --- |
-| macOS 13 或更新 | Apple Silicon（arm64）、Intel（x64） | ZIP。解压后运行 `Install.command`，从菜单栏进入原生设置 |
-| Windows | x64、arm64 | ZIP。运行 `Start.cmd` 启动，再运行 `Settings.cmd` 打开本机设置页 |
-| Linux | x64、arm64 | TAR.GZ。运行 `./router serve`，在另一终端运行 `./router dashboard` 打开本机设置页 |
+| macOS 13 或更新 | Apple Silicon（arm64）、Intel（x64） | 打开 `.dmg`，把 App 拖进「应用程序」。从菜单栏打开原生设置 |
+| Windows | x64、arm64 | 运行 `-setup.exe`，从开始菜单打开 Codex Plan Router |
+| Linux（Debian / Ubuntu） | amd64、arm64 | 运行 `sudo apt install ./codex-plan-router-*.deb`，从应用菜单打开，或运行 `codex-plan-router launch` |
 
-macOS 安装及修改桌面代理配置需要 Python 3.11 或更新版本。Windows 使用 Python Launcher（`py -3`）。若 Python 不在默认位置，可将 `CODEX_ROUTER_PYTHON` 指向 Python 可执行文件。有图形界面的 Linux 需要 `xdg-open`。
+macOS App 自带后台，状态栏菜单可选「登录时启动」。Windows、Linux 使用本机设置页。需要停止后台时，可用开始菜单或应用菜单中的停止入口。Linux 卸载前，如已启用桌面代理，可用 `codex-plan-router stop --restore-direct` 恢复桌面配置，再用系统包管理器卸载。
 
-macOS 包采用临时签名，未公证。可以从源码构建，或在核对发行包的 SHA-256 后按 macOS 的提示授权打开。Windows 和 Linux 便携版目前没有原生托盘，也不会自动设为开机运行。
+Windows 和 macOS 安装包未做发行者签名或 Apple 公证。下载后可用 Release 中的 `SHA256SUMS.txt` 校验。配置桌面代理需要 Python 3.11 或更新版本。Windows 默认使用 Python Launcher（`py -3`），也可将 `CODEX_ROUTER_PYTHON` 指向 Python 可执行文件。
 
 ## 账号与额度
 
 1. 在设置中添加账号，并在 OpenAI 官方页面完成授权。
-2. macOS 在账号卡片上点「授权额度查询」以独立查看五小时及每周额度。在其他平台，从解压目录用自带的 Node 运行 `quota-native.mjs login <账号编号>`，然后运行 `quota.mjs --all` 查看数据。
+2. macOS 在账号卡片上点「授权额度查询」以独立查看五小时及每周额度。在其他平台，可用安装目录中的 Node 运行 `quota-native.mjs login <账号编号>`，然后运行 `quota.mjs --all` 查看数据。
 3. 独立额度查询需要官方 Codex CLI。Windows 需让 `codex.exe` 可用，Linux 需让 `codex` 可用。若 CLI 不在 PATH 或 macOS 客户端装在自定义目录，把 `CODEX_ROUTER_CODEX_BIN` 设为其可执行文件路径后从同一环境运行命令。
 
 工具的凭证保存在当前用户的数据目录。macOS 使用 `~/Library/Application Support/Codex Plan Router`，Windows 使用 `%LOCALAPPDATA%\Codex Plan Router`，Linux 使用 `${XDG_STATE_HOME:-~/.local/state}/codex-plan-router`。请勿分享运行目录或 `state.json`。额度缓存不包含令牌。
@@ -38,7 +38,7 @@ node cli.mjs serve
 
 另开终端执行 `node cli.mjs dashboard`。运行测试用 `npm test`，测试只使用临时目录、回环接口与模拟上游。
 
-打包命令为 `python3 scripts/package_release.py <macos|windows|linux> <x64|arm64>`，输出目录为 `dist/`。macOS 构建需要 Xcode。GitHub Actions 在版本标签触发时构建发行包并附上校验文件。
+打包命令为 `python3 scripts/package_release.py <macos|windows|linux> <x64|arm64>`，输出目录为 `dist/`。macOS 构建需要 Xcode，Windows 构建需要 NSIS，Linux 构建需要 dpkg-deb。GitHub Actions 由版本标签触发，在相应系统验证安装文件，生成 SHA-256 清单并发布。验证使用空账号目录和离线后台，禁止访问 OpenAI 上游。
 
 ## 许可证
 

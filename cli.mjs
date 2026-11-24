@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
@@ -38,22 +40,44 @@ async function runningStore() {
 }
 async function admin(path, body) {
   const store = await runningStore();
-  const r = await fetch(`http://127.0.0.1:${port}/admin/${path}`, { method: body ? 'POST' : 'GET', headers: { 'x-router-key': store.data.adminKey, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(`http://127.0.0.1:${port}/admin/${path}`, { signal: AbortSignal.timeout(180_000), method: body ? 'POST' : 'GET', headers: { 'x-router-key': store.data.adminKey, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json();
   if (!r.ok) throw new RouterError(data.error?.message ?? '本地管理请求失败');
   return data;
 }
+async function listening() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) });
+    return response.ok && (await response.json()).app === APP;
+  } catch {
+    return false;
+  }
+}
+
+async function openDashboard() {
+  const store = await runningStore();
+  await admin('status');
+  await openBrowser(`http://127.0.0.1:${port}/#${store.data.adminKey}`);
+}
+
 async function main() {
   if (command === 'serve') {
     const release = await acquireLock();
     try {
       const store = await new Store(stateDir).init();
-      const server = await new RouterServer(store, { port }).listen();
-      server.startQuotaMonitor();
+      const offline = args.includes('--offline');
+      const fetcher = offline ? async () => { throw new RouterError('此实例为离线验证模式', 503); } : undefined;
+      const server = await new RouterServer(store, { port, fetcher }).listen();
+      if (!offline) server.startQuotaMonitor();
       console.log(`${APP} 已启动，监听 127.0.0.1:${port}；不会自动修改客户端配置。`);
       let stopping = false;
       const stop = async () => { if (stopping) return; stopping = true; await server.close(); await store.queue; await release(); process.exit(0); };
+      server.shutdown = stop;
       process.on('SIGTERM', stop); process.on('SIGINT', stop);
+      if (args.includes('--parent-pipe')) {
+        process.stdin.once('end', stop);
+        process.stdin.resume();
+      }
     } catch (e) { await release(); throw e; }
     return;
   }
@@ -63,12 +87,44 @@ async function main() {
     const result = await installService(source, destination, stateDir, process.execPath);
     console.log(JSON.stringify(result, null, 2)); return;
   }
-  if (command === 'dashboard') {
-    const store = await runningStore();
-    const r = await fetch(`http://127.0.0.1:${port}/health`);
-    if (!r.ok) throw new RouterError('后台服务尚未就绪');
-    await openBrowser(`http://127.0.0.1:${port}/#${store.data.adminKey}`);
-    console.log('本地设置页已打开。'); return;
+  if (command === 'launch') {
+    if (!await listening()) {
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', '--state', stateDir, '--port', String(port)], {
+        detached: true, stdio: 'ignore', windowsHide: true,
+      });
+      const started = new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+      await started;
+      child.unref();
+      const deadline = Date.now() + 7000;
+      while (!await listening()) {
+        if (Date.now() >= deadline) throw new RouterError('后台启动失败，请检查端口或现有实例');
+        await delay(150);
+      }
+    }
+    await openDashboard();
+    return;
+  }
+  if (command === 'dashboard') { await openDashboard(); return; }
+  if (command === 'stop') {
+    const restore = args.includes('--restore-direct');
+    if (await listening()) {
+      await admin('shutdown', { restore });
+      const deadline = Date.now() + 5000;
+      while (await listening()) {
+        if (Date.now() >= deadline) throw new RouterError('后台仍在退出，请稍后重试');
+        await delay(100);
+      }
+    } else if (restore) {
+      const store = await runningStore().catch(error => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      });
+      if (store) await new DesktopConfig(store, port).disable();
+    }
+    return;
   }
   if (command === 'status') { console.log(JSON.stringify(await admin('status'), null, 2)); return; }
   if (command === 'verify') { console.log(JSON.stringify(await admin('verify', { slot: args[1] }), null, 2)); return; }
@@ -79,6 +135,6 @@ async function main() {
     const config = new DesktopConfig(store, port);
     await config.disable(); console.log('已移除代理配置，请在任务结束后重新打开客户端。'); return;
   }
-  console.log('用法：node cli.mjs <install|dashboard|status|verify <账号编号>|enable|disable|serve> [--state 目录] [--port 端口]\n首次使用：install → dashboard → 连接并验证至少两个账号 → 启用 → 任务结束后手动重新打开桌面客户端。');
+  console.log('用法：node cli.mjs <install|launch|dashboard|stop|status|verify <账号编号>|enable|disable|serve> [--state 目录] [--port 端口]\n首次使用：install → dashboard → 连接并验证至少两个账号 → 启用 → 任务结束后手动重新打开桌面客户端。');
 }
 main().catch(e => { console.error(e instanceof RouterError ? e.message : '操作失败，请检查网络、文件权限或后台服务状态。'); process.exitCode = 1; });

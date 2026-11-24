@@ -13,7 +13,7 @@ import sys
 import tarfile
 from tempfile import TemporaryDirectory
 from urllib.request import urlopen
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE_VERSION = (ROOT / '.node-version').read_text().strip()
@@ -60,35 +60,81 @@ def write_executable(path, content):
     path.chmod(0o755)
 
 
-def launchers(platform, arch, staging, build, binary):
-    if platform == 'macos':
-        mac_arch = 'x86_64' if arch == 'x64' else arch
-        subprocess.run(['zsh', str(ROOT / 'menubar/build.sh'), str(build)], env={**os.environ, 'MACOS_TARGET_ARCH': mac_arch}, check=True)
-        shutil.copytree(build / 'Codex Plan Router.app', staging / 'Codex Plan Router.app')
-        (staging / 'menubar').mkdir()
-        shutil.copy2(ROOT / 'menubar/install.py', staging / 'menubar/install.py')
-        shutil.copy2(ROOT / 'scripts/Install.command', staging / 'Install.command')
-        return
-    if platform == 'windows':
-        (staging / 'router.cmd').write_bytes((
-            '@echo off\r\n'
-            'pushd "%~dp0"\r\n'
-            'set "NODE_USE_ENV_PROXY=1"\r\n'
-            'set "NO_PROXY=localhost,127.0.0.1,::1,%NO_PROXY%"\r\n'
-            '"%~dp0runtime\\node.exe" "%~dp0cli.mjs" %*\r\n'
-            'set "router_status=%ERRORLEVEL%"\r\n'
-            'popd\r\nexit /b %router_status%\r\n'
-        ).encode('ascii'))
-        for name, command in [('Start.cmd', 'serve'), ('Settings.cmd', 'dashboard')]:
-            (staging / name).write_bytes(f'@echo off\r\ncall "%~dp0router.cmd" {command}\r\nif errorlevel 1 pause\r\n'.encode('ascii'))
-        return
-    write_executable(staging / 'router', f'''#!/bin/sh
+def build_dmg(payload, directory, target, arch):
+    build = directory / 'build'
+    mac_arch = 'x86_64' if arch == 'x64' else arch
+    subprocess.run(
+        ['zsh', str(ROOT / 'menubar/build.sh'), str(build)],
+        env={**os.environ, 'MACOS_TARGET_ARCH': mac_arch},
+        check=True,
+    )
+    app = build / 'Codex Plan Router.app'
+    shutil.copytree(payload, app / 'Contents/Resources/RouterBackend')
+    subprocess.run(['codesign', '--force', '--sign', '-', app], check=True)
+    subprocess.run(['codesign', '--verify', '--strict', app], check=True)
+    image = directory / 'image'
+    image.mkdir()
+    shutil.move(app, image)
+    (image / 'Applications').symlink_to('/Applications', target_is_directory=True)
+    subprocess.run(['hdiutil', 'create', '-ov', '-volname', 'Codex Plan Router',
+                    '-srcfolder', image, '-format', 'UDZO', target], check=True)
+
+
+def build_exe(payload, target, arch):
+    compiler = shutil.which('makensis')
+    if compiler is None:
+        for key in ('ProgramFiles(x86)', 'ProgramFiles'):
+            if os.environ.get(key):
+                candidate = Path(os.environ[key]) / 'NSIS/makensis.exe'
+                if candidate.is_file():
+                    compiler = str(candidate)
+                    break
+    if compiler is None:
+        raise RuntimeError('NSIS makensis is required')
+    prefix = '/' if os.name == 'nt' else '-'
+    definitions = {'OUTPUT': target, 'PAYLOAD': payload, 'VERSION': RELEASE_VERSION, 'ARCH': arch}
+    subprocess.run([compiler, *(f'{prefix}D{key}={value}' for key, value in definitions.items()),
+                    ROOT / 'installers/windows.nsi'], check=True)
+
+
+def build_deb(payload, directory, target, arch):
+    debian_arch = 'amd64' if arch == 'x64' else 'arm64'
+    package = directory / 'deb'
+    metadata = package / 'DEBIAN'
+    metadata.mkdir(parents=True)
+    (metadata / 'control').write_text(
+        f'Package: codex-plan-router\nVersion: {RELEASE_VERSION}\nArchitecture: {debian_arch}\n'
+        'Section: utils\nPriority: optional\nMaintainer: Codex Plan Router contributors\n'
+        'Depends: libc6 (>= 2.28), libstdc++6, xdg-utils\n'
+        'Recommends: python3 (>= 3.11)\n'
+        'Description: Local Codex accounts and quota manager\n',
+        encoding='ascii',
+    )
+    bundle = package / 'usr/lib/codex-plan-router'
+    bundle.parent.mkdir(parents=True)
+    shutil.move(payload, bundle)
+    launcher = package / 'usr/bin/codex-plan-router'
+    launcher.parent.mkdir(parents=True)
+    write_executable(launcher, '''#!/bin/sh
 set -eu
-root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-export NODE_USE_ENV_PROXY=1
-export NO_PROXY="localhost,127.0.0.1,::1,${{NO_PROXY:-}}"
-exec "$root/runtime/{binary}" "$root/cli.mjs" "$@"
+exec /usr/lib/codex-plan-router/runtime/node /usr/lib/codex-plan-router/cli.mjs "$@"
 ''')
+    desktop = package / 'usr/share/applications/codex-plan-router.desktop'
+    desktop.parent.mkdir(parents=True)
+    desktop.write_text('''[Desktop Entry]
+Type=Application
+Name=Codex Plan Router
+Exec=codex-plan-router launch
+Icon=preferences-system-network
+Terminal=false
+Categories=Utility;
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop Codex Plan Router
+Exec=codex-plan-router stop
+''', encoding='ascii')
+    subprocess.run(['dpkg-deb', '--root-owner-group', '--build', package, target], check=True)
 
 
 def main():
@@ -101,25 +147,25 @@ def main():
         parser.error('package.json must use a numeric release version')
     if args.platform == 'macos' and sys.platform != 'darwin':
         parser.error('building the macOS app requires Xcode on macOS')
-    args.dist.mkdir(parents=True, exist_ok=True)
+    dist = args.dist.resolve()
+    dist.mkdir(parents=True, exist_ok=True)
     stem = f'codex-plan-router-v{RELEASE_VERSION}-{args.platform}-{args.arch}'
     with TemporaryDirectory(prefix='codex-router-build-') as directory:
         base = Path(directory)
-        staging = base / stem
+        staging = base / 'payload'
         staging.mkdir()
         for name in FILES:
             shutil.copy2(ROOT / name, staging / name)
-        binary = node_runtime(args.platform, args.arch, staging / 'runtime')
-        launchers(args.platform, args.arch, staging, base / 'build', binary)
-        if args.platform == 'linux':
-            target = args.dist / (stem + '.tar.gz')
-            with tarfile.open(target, 'w:gz') as archive:
-                archive.add(staging, arcname=stem)
+        node_runtime(args.platform, args.arch, staging / 'runtime')
+        if args.platform == 'macos':
+            target = dist / (stem + '.dmg')
+            build_dmg(staging, base, target, args.arch)
+        elif args.platform == 'windows':
+            target = dist / (stem + '-setup.exe')
+            build_exe(staging, target, args.arch)
         else:
-            target = args.dist / (stem + '.zip')
-            with ZipFile(target, 'w', compression=ZIP_DEFLATED, compresslevel=6) as archive:
-                for path in sorted(staging.rglob('*')):
-                    archive.write(path, path.relative_to(base))
+            target = dist / (stem + '.deb')
+            build_deb(staging, base, target, args.arch)
     print(target)
 
 
