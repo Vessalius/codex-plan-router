@@ -45,6 +45,19 @@ test('官方五小时或每周已耗尽时停止新分配，不能伪装重置�
   s.store.data.opaque[hash('a-context')] = { slot: 'a', at: now };
   assert.throws(() => s.select({ input: [{ encrypted_content: 'a-context' }] }), /所属账号暂不可用/);
 });
+test('主号任一窗口剩余 1% 时保留额度，已绑定的请求仍选择原账号', () => {
+  const { accounts, store, scheduler: s } = setup();
+  store.data.primarySlot = 'a';
+  s.quotas = { a: snapshot(accounts, 'a', 1, 90), b: snapshot(accounts, 'b', 1, 90) };
+  assert.equal(s.select(body), 'b');
+  s.quotas.a = snapshot(accounts, 'a', 90, 1);
+  assert.equal(s.select(body), 'b');
+  assert.equal(s.select(body, new Set(['b'])), null);
+  store.data.opaque[hash('a-context')] = { slot: 'a', at: now };
+  assert.equal(s.select({ input: [{ encrypted_content: 'a-context' }] }), 'a');
+  s.quotas.a.weekly.remainingPercent = 2;
+  assert.equal(s.select(body, new Set(['b'])), 'a');
+});
 test('上下文固定账号；额度较少也不强制切换，主号历史仍归主号', () => {
   const { accounts, scheduler: s } = setup();
   s.quotas = { a: snapshot(accounts, 'a', 10, 10), b: snapshot(accounts, 'b', 99, 99) };

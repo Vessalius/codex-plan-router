@@ -8,6 +8,7 @@ export const ISSUER = 'https://auth.openai.com';
 export const API = 'https://api.openai.com/v1';
 export const SCOPES = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 export const WINDOW = 5 * 3600_000;
+const PRIMARY_RESERVE_PERCENT = 1;
 export const isAccountSlot = slot => typeof slot === 'string' && /^[a-z]{1,8}$/.test(slot) && slot !== 'primary' && slot !== 'none';
 export const accountSlots = accounts => [...new Set(['a', 'b', ...Object.keys(accounts).filter(isAccountSlot)])]
   .sort((a, b) => a.length - b.length || a.localeCompare(b, 'en'));
@@ -232,6 +233,11 @@ export class Scheduler {
       return owner;
     }
     let candidates = accountSlots(this.store.data.accounts).filter(slot => this.eligible(slot) && !excluded.has(slot) && !this.officialQuota(slot)?.exhausted);
+    const primarySlot = this.store.data.primarySlot;
+    const primaryQuota = this.officialQuota(primarySlot);
+    if ([primaryQuota?.fiveHour, primaryQuota?.weekly].some(window => window && window.remainingPercent <= PRIMARY_RESERVE_PERCENT)) {
+      candidates = candidates.filter(slot => slot !== primarySlot);
+    }
     const official = candidates.length > 0 && candidates.every(slot => this.officialQuota(slot)?.complete);
     if (official) {
       const now = this.now();

@@ -14,6 +14,8 @@
 
 For example, account A has **80%** of its 5-hour quota and **10%** of its weekly quota left. Account B has **55%** and **65%**, respectively. With similar reset times and active request counts, a new unbound request goes to B because A is closer to its weekly limit. An existing conversation bound to A normally stays on A.
 
+When current official data shows that the configured primary account has 1% or less left in either window, the proxy excludes it from unbound requests. Direct requests and account-bound conversations may still use its remaining quota.
+
 Each account uses its own quota. Desktop logins, cloud conversations, and quotas stay separate across accounts. Follow the [OpenAI Terms of Use](https://openai.com/policies/terms-of-use/) and [Sign in with ChatGPT documentation](https://developers.openai.com/siwc/token-sharing-open-source).
 
 ## Accounts and quota

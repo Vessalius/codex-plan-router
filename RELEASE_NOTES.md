@@ -1,9 +1,9 @@
 ## English
 
-- Enabling or disabling the desktop proxy now shows a **Restart Codex** prompt on macOS, Windows, and Linux. Finish your current tasks before quitting and reopening Codex.
-- The default again follows the system language on macOS and the browser language on Windows and Linux. The macOS menu bar keeps the **Language / 语言** submenu.
+- Preserves quota for the configured primary account. When current official usage shows 1% or less remaining in either the 5-hour or weekly window, unbound requests use other eligible accounts.
+- Account-bound conversations and direct requests can still consume the primary account's quota.
 
 ## 中文
 
-- macOS、Windows 和 Linux 开启或关闭桌面代理后，都会弹出 **「请重启 Codex」**。请等当前任务完成，再退出并重新打开 Codex。
-- 默认跟随系统或浏览器语言，macOS 状态栏仍可通过 **「Language / 语言」** 快速切换。
+- 为设置中的主号预留额度。当有效的官方数据显示五小时或每周任一窗口剩余 1% 或以下时，未绑定账号的请求只分配给其他可用账号。
+- 已绑定的会话和官方直连请求仍可能消耗主号额度。
